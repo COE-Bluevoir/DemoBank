@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+:root {
+  --color-navy: #102a43;
+  --color-primary: #0067b1;
+  --color-primary-strong: #0a5a95;
+  --color-teal: #008c95;
+  --color-page: #edf5f9;
+  --color-surface-soft: #f4f7f9;
+  --color-border: rgba(16, 42, 67, 0.08);
+  --color-border-strong: rgba(16, 42, 67, 0.18);
+  --color-ink: #1c2730;
+  --color-ink-subtle: rgba(28, 39, 48, 0.78);
+  --color-ink-muted: rgba(28, 39, 48, 0.58);
+  --color-success: #13795b;
+  --color-warning: #b7791f;
+  --color-error: #b42318;
+}
+
+@theme inline {
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-manrope), sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(0, 140, 149, 0.08), transparent 28%),
+    linear-gradient(180deg, #f7fbfd 0%, var(--color-page) 100%);
+  color: var(--color-ink);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
