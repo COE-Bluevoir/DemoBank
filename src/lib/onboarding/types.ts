@@ -59,6 +59,12 @@ export interface DocumentView {
   status: DocumentStatus;
   source: "upload" | "demo";
   evidenceReference: string;
+  /**
+   * Opaque handle to the stored binary. Present for real uploads only; the
+   * orchestration layer uses it to retrieve content and must never receive
+   * the file bytes through the browser.
+   */
+  storageReference?: string;
 }
 
 export type AssistantMessage =
@@ -158,6 +164,8 @@ export interface UploadedDocument {
   fileType: string;
   fileSize: number;
   source: "upload" | "demo";
+  /** Handle returned by the document storage layer. */
+  storageReference?: string;
 }
 
 export interface DocumentUploadResponse {

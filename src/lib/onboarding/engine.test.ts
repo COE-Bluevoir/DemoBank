@@ -1,3 +1,4 @@
+// @vitest-environment node
 import fs from "node:fs";
 import path from "node:path";
 
@@ -11,9 +12,13 @@ import {
   getDemoSettings,
   resetCase,
   saveDocument,
+  serializeError,
   submitCaseAction,
   updateMode,
 } from "@/lib/onboarding/engine";
+import { ConfigurationError } from "@/lib/config/env";
+import { PegaIntegrationError, type PegaFailureKind } from "@/lib/pega/errors";
+import { applicantSchema } from "@/lib/onboarding/schemas";
 import { getAdapter } from "@/lib/onboarding/adapters";
 import { DEMO_CUSTOMER } from "@/lib/onboarding/constants";
 import { isDemoAuthorizedCookie } from "@/lib/onboarding/demo-auth";
@@ -53,7 +58,7 @@ describe("onboarding engine", () => {
     caseView = submitCaseAction(created.caseId, {
       actionId: "SUBMIT_DETAILS",
       expectedCaseVersion: caseView.caseVersion,
-      data: DEMO_CUSTOMER,
+      data: { ...DEMO_CUSTOMER },
     });
 
     caseView = submitCaseAction(created.caseId, {
@@ -114,7 +119,7 @@ describe("onboarding engine", () => {
     caseView = submitCaseAction(created.caseId, {
       actionId: "SUBMIT_DETAILS",
       expectedCaseVersion: caseView.caseVersion,
-      data: DEMO_CUSTOMER,
+      data: { ...DEMO_CUSTOMER },
     });
     caseView = submitCaseAction(created.caseId, {
       actionId: "ACCEPT_CONSENT",
@@ -146,16 +151,93 @@ describe("onboarding engine", () => {
   it("updates mode settings and selects adapters", () => {
     updateMode("non-pega");
     expect(getDemoSettings().orchestrationMode).toBe("non-pega");
-    expect(getAdapter("pega")).toBeDefined();
+    expect(getAdapter("non-pega")).toBeDefined();
+    expect(getAdapter("mock-pega")).toBeDefined();
+  });
+
+  it("refuses to build a Pega adapter when the connection is unconfigured", () => {
+    // Falling back to the mock here would make a broken integration look
+    // healthy, so an unconfigured environment must fail loudly instead.
+    expect(() => getAdapter("pega")).toThrow(/not configured/i);
   });
 
   it("validates demo-control cookies", () => {
     const cookieStore = {
       get() {
-        return { value: "northstar-26" };
+        return { name: "northstar-demo-control", value: "northstar-26" };
       },
     };
 
     expect(isDemoAuthorizedCookie(cookieStore)).toBe(true);
+  });
+});
+
+describe("error serialization at the BFF boundary", () => {
+  it("returns the customer-safe message for a Pega failure, not the technical one", () => {
+    const error = new PegaIntegrationError("VALIDATION", {
+      technicalDetail: "POST /cases returned HTTP 400.",
+      correlationId: "corr-123",
+    });
+
+    const serialized = serializeError(error);
+
+    expect(serialized.statusCode).toBe(422);
+    expect(serialized.message).toBe(
+      "Some of the information provided could not be accepted.",
+    );
+    // The upstream detail must never cross the boundary.
+    expect(serialized.message).not.toContain("HTTP 400");
+    expect(serialized.message).not.toMatch(/Pega|\/cases/i);
+  });
+
+  it("maps each Pega failure kind onto the right status without leaking detail", () => {
+    const cases: Array<[PegaFailureKind, number]> = [
+      ["NOT_FOUND", 404],
+      ["VERSION_CONFLICT", 409],
+      ["VALIDATION", 422],
+      ["RATE_LIMITED", 503],
+      ["UNAVAILABLE", 502],
+      ["TIMEOUT", 504],
+      ["AUTH", 502],
+      ["CONTRACT", 502],
+    ];
+
+    for (const [kind, expectedStatus] of cases) {
+      const serialized = serializeError(
+        new PegaIntegrationError(kind, {
+          technicalDetail: "internal-only detail with /cases and HTTP 500",
+        }),
+      );
+
+      expect(serialized.statusCode).toBe(expectedStatus);
+      expect(serialized.message).not.toContain("internal-only detail");
+    }
+  });
+
+  it("reports an unconfigured connection as a service problem, not a customer one", () => {
+    const serialized = serializeError(
+      new ConfigurationError("Missing PEGA_CLIENT_SECRET."),
+    );
+
+    expect(serialized.statusCode).toBe(503);
+    expect(serialized.message).not.toMatch(/PEGA_CLIENT_SECRET|Missing/i);
+  });
+
+  it("treats a schema rejection as a client error rather than a server fault", () => {
+    const result = applicantSchema.safeParse({ fullName: "x" });
+    expect(result.success).toBe(false);
+
+    const serialized = serializeError(result.error);
+    expect(serialized.statusCode).toBe(422);
+  });
+
+  it("never returns a raw error message for an unexpected failure", () => {
+    const serialized = serializeError(
+      new Error("connect ECONNREFUSED 10.0.0.5:5432"),
+    );
+
+    expect(serialized.statusCode).toBe(500);
+    expect(serialized.message).not.toContain("ECONNREFUSED");
+    expect(serialized.message).not.toContain("10.0.0.5");
   });
 });

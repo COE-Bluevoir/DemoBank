@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 
 import { BankHeader } from "@/components/bank-header";
 import { OnboardingFlow } from "@/components/onboarding-flow";
-import { getConsentText, serializeError, fetchCaseView } from "@/lib/onboarding/engine";
+import { getAdapterForCase } from "@/lib/onboarding/adapters";
+import { getConsentText, serializeError } from "@/lib/onboarding/engine";
 
 export default async function OnboardingCasePage({
   params,
@@ -16,7 +17,9 @@ export default async function OnboardingCasePage({
   let caseData;
 
   try {
-    caseData = fetchCaseView(caseId);
+    // Always resolve through the adapter so the page works against whichever
+    // orchestration is active, not just the in-process mock engine.
+    caseData = await getAdapterForCase(caseId).getCase(caseId);
   } catch (error) {
     const serialized = serializeError(error);
     if (serialized.statusCode === 404) {

@@ -35,7 +35,7 @@ export default function OnboardingStartPage() {
     }
 
     const beginResponse = await fetch(
-      `/api/onboarding/cases/${payload.caseId}/actions`,
+      `/api/onboarding/cases/${encodeURIComponent(payload.caseId)}/actions`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

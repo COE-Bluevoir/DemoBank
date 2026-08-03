@@ -1,14 +1,16 @@
 import { cookies } from "next/headers";
 import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 
+import { getServerConfig } from "@/lib/config/env";
+
 const DEMO_COOKIE_NAME = "northstar-demo-control";
 
 export function getDemoControlEnabled() {
-  return process.env.DEMO_CONTROL_ENABLED !== "false";
+  return getServerConfig().demoControlEnabled;
 }
 
 export function getDemoControlPasscode() {
-  return process.env.DEMO_CONTROL_PASSCODE || "northstar-26";
+  return getServerConfig().demoControlPasscode;
 }
 
 export function demoCookieName() {

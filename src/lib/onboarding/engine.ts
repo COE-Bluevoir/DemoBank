@@ -1,6 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
+import { ZodError } from "zod";
 
+import { ConfigurationError, getServerConfig } from "@/lib/config/env";
+import { logServerError } from "@/lib/observability/logger";
+import { PegaIntegrationError } from "@/lib/pega/errors";
 import {
   BRAND,
   CASE_PROGRESS_STEPS,
@@ -38,14 +40,16 @@ import type {
   SubmitCaseActionRequest,
   UploadedDocument,
 } from "@/lib/onboarding/types";
+import {
+  type CaseStore,
+  FileCaseStore,
+  InMemoryCaseStore,
+} from "@/lib/store/case-store";
 
 type AssistantMessageInput =
   | Omit<Extract<AssistantMessage, { type: "text" }>, "id" | "createdAt">
   | Omit<Extract<AssistantMessage, { type: "choice" }>, "id" | "createdAt">
   | Omit<Extract<AssistantMessage, { type: "status" }>, "id" | "createdAt">;
-
-const STORE_DIR = path.join(process.cwd(), ".demo-data");
-const STORE_FILE = path.join(STORE_DIR, "northstar-demo-store.json");
 
 const PROGRESS_INDEX: Record<OnboardingStatus, number> = {
   STARTED: 0,
@@ -98,40 +102,47 @@ function nextCaseId(snapshot: DemoSnapshot) {
 }
 
 function defaultSettings(): DemoSettings {
+  const config = getServerConfig();
+
   return {
-    orchestrationMode:
-      (process.env.ORCHESTRATION_MODE as OrchestrationMode | undefined) ||
-      "mock-pega",
-    scenarioId:
-      (process.env.DEMO_SCENARIO as ScenarioId | undefined) ||
-      "ADDRESS_PEP_REVIEW",
-    demoControlEnabled: process.env.DEMO_CONTROL_ENABLED !== "false",
+    orchestrationMode: config.orchestrationMode,
+    scenarioId: config.defaultScenarioId,
+    demoControlEnabled: config.demoControlEnabled,
   };
 }
 
-function ensureStore() {
-  if (!fs.existsSync(STORE_DIR)) {
-    fs.mkdirSync(STORE_DIR, { recursive: true });
-  }
+function initialSnapshot(): DemoSnapshot {
+  return { settings: defaultSettings(), cases: [] };
+}
 
-  if (!fs.existsSync(STORE_FILE)) {
-    const snapshot: DemoSnapshot = {
-      settings: defaultSettings(),
-      cases: [],
-    };
+/**
+ * Serverless hosting has no writable application filesystem, so the file store
+ * is only used where one exists. Live Pega keeps case state in Pega itself, so
+ * the in-memory store there only holds presenter settings.
+ */
+function createDefaultStore(): CaseStore {
+  return getServerConfig().storageDriver === "aws"
+    ? new InMemoryCaseStore(initialSnapshot)
+    : new FileCaseStore(undefined, initialSnapshot);
+}
 
-    fs.writeFileSync(STORE_FILE, JSON.stringify(snapshot, null, 2));
-  }
+let store: CaseStore = createDefaultStore();
+
+/** Swap the persistence implementation (tests, or a future database store). */
+export function setCaseStore(next: CaseStore): void {
+  store = next;
+}
+
+export function getCaseStore(): CaseStore {
+  return store;
 }
 
 function readStore(): DemoSnapshot {
-  ensureStore();
-  return JSON.parse(fs.readFileSync(STORE_FILE, "utf8")) as DemoSnapshot;
+  return store.read();
 }
 
 function writeStore(snapshot: DemoSnapshot) {
-  ensureStore();
-  fs.writeFileSync(STORE_FILE, JSON.stringify(snapshot, null, 2));
+  store.write(snapshot);
 }
 
 function withStore<T>(updater: (snapshot: DemoSnapshot) => T): T {
@@ -782,6 +793,7 @@ export function saveDocument(caseId: string, document: UploadedDocument): Docume
       status: "UPLOADED",
       source: document.source,
       evidenceReference,
+      storageReference: document.storageReference,
     };
 
     caseRecord.documents = [
@@ -902,14 +914,57 @@ export function getDemoCustomerTemplate() {
   return DEMO_CUSTOMER;
 }
 
+/**
+ * Translate any thrown value into a response the customer may safely see.
+ *
+ * The rule this enforces: technical detail is logged, never returned. Only
+ * `EngineError` messages are author-written for customers; everything else is
+ * replaced with a neutral equivalent.
+ */
 export function serializeError(error: unknown) {
   if (error instanceof EngineError) {
     return { message: error.message, statusCode: error.statusCode };
   }
 
-  if (error instanceof Error) {
-    return { message: error.message, statusCode: 500 };
+  // Upstream orchestration failures carry both a technical and a customer-safe
+  // message. Only the latter crosses the boundary.
+  if (error instanceof PegaIntegrationError) {
+    logServerError(
+      {
+        scope: "pega",
+        correlationId: error.correlationId,
+        detail: error.technicalDetail,
+      },
+      error,
+    );
+
+    return { message: error.customerMessage, statusCode: error.statusCode };
   }
 
-  return { message: "Unexpected error", statusCode: 500 };
+  // A misconfigured environment is an operator problem, not a customer one.
+  if (error instanceof ConfigurationError) {
+    logServerError({ scope: "config" }, error);
+
+    return {
+      message:
+        "This service is temporarily unavailable. Your application has been saved.",
+      statusCode: 503,
+    };
+  }
+
+  // Schema rejections are client input problems, not server faults.
+  if (error instanceof ZodError) {
+    return {
+      message: "Some of the information provided could not be accepted.",
+      statusCode: 422,
+    };
+  }
+
+  logServerError({ scope: "unexpected" }, error);
+
+  return {
+    message:
+      "We could not complete that step right now. Your application has been saved.",
+    statusCode: 500,
+  };
 }

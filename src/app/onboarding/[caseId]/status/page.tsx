@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 
 import { BankHeader } from "@/components/bank-header";
 import { OnboardingStatusView } from "@/components/onboarding-status-view";
-import { fetchCaseView, serializeError } from "@/lib/onboarding/engine";
+import { getAdapterForCase } from "@/lib/onboarding/adapters";
+import { serializeError } from "@/lib/onboarding/engine";
 
 export default async function OnboardingStatusPage({
   params,
@@ -13,7 +14,8 @@ export default async function OnboardingStatusPage({
   let caseData;
 
   try {
-    caseData = fetchCaseView(caseId);
+    // Resolve through the adapter so live and mock orchestration behave alike.
+    caseData = await getAdapterForCase(caseId).getCase(caseId);
   } catch (error) {
     const serialized = serializeError(error);
     if (serialized.statusCode === 404) {

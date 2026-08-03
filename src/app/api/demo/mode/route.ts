@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { isPegaConnectionConfigured } from "@/lib/onboarding/adapters";
 import {
   getDemoControlEnabled,
   isDemoAuthorizedCookie,
@@ -18,6 +19,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const payload = modeSchema.parse(await request.json());
+
+    // Selecting live Pega without a configured connection would silently run
+    // the mock engine and make a broken integration look healthy.
+    if (payload.orchestrationMode === "pega" && !isPegaConnectionConfigured()) {
+      return NextResponse.json(
+        {
+          message:
+            "Live Pega mode is not configured in this environment. Set PEGA_BASE_URL, PEGA_TOKEN_URL, PEGA_CLIENT_ID and PEGA_CLIENT_SECRET.",
+        },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json(updateMode(payload.orchestrationMode));
   } catch (error) {
     const serialized = serializeError(error);

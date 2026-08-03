@@ -8,7 +8,7 @@ Independent fictional retail-banking website for the NorthStar Bank Everyday Plu
 - React 19
 - Tailwind CSS 4
 - React Hook Form + Zod
-- Deterministic mock orchestration adapter
+- Pluggable orchestration adapters: deterministic mock and live Pega
 - Vitest for unit tests
 - Playwright for end-to-end demo tests
 
@@ -36,16 +36,28 @@ npm run dev
 
 ## Environment variables
 
-See [.env.example](./.env.example).
+See [.env.example](./.env.example) for the annotated list. Every variable is
+validated at startup in `src/lib/config/env.ts`.
 
-- `ORCHESTRATION_MODE=mock-pega`
-- `DEMO_SCENARIO=ADDRESS_PEP_REVIEW`
-- `DEMO_CONTROL_ENABLED=true`
-- `DEMO_CONTROL_PASSCODE=northstar-26`
-- `PEGA_BASE_URL=`
-- `PEGA_CLIENT_ID=`
-- `PEGA_CLIENT_SECRET=`
-- `PEGA_TOKEN_URL=`
+The app runs with no configuration at all in `mock-pega` mode. To connect live
+Pega, set `ORCHESTRATION_MODE=pega` plus `PEGA_BASE_URL`, `PEGA_TOKEN_URL`,
+`PEGA_CLIENT_ID` and `PEGA_CLIENT_SECRET`. If any are missing the app refuses
+to start rather than silently falling back to the mock engine.
+
+## Connecting Pega
+
+[docs/pega-integration-guide.md](./docs/pega-integration-guide.md) is the full
+connection specification: the endpoints Pega must expose, the case contract,
+the status mapping table, the tool services Pega calls back into, and how it
+retrieves uploaded document evidence.
+
+Check readiness at any time:
+
+```bash
+curl localhost:3000/api/health            # configuration
+curl "localhost:3000/api/health?deep=true" # also verifies Pega authentication
+curl localhost:3000/api/services          # tool allowlist
+```
 
 ## Running the Leadership Demo
 
@@ -63,12 +75,20 @@ See [.env.example](./.env.example).
 
 ## Routes
 
+Customer-facing:
+
 - `/`
 - `/accounts/everyday-plus`
 - `/onboarding/start`
 - `/onboarding/[caseId]`
 - `/onboarding/[caseId]/status`
-- `/demo/control`
+
+Internal:
+
+- `/demo/control` — presenter surface, passcode gated
+- `/api/health` — configuration and Pega readiness
+- `/api/services` and `/api/services/{tool}` — tool services Pega invokes
+- `/api/internal/documents/{ref}` — evidence retrieval for the orchestration layer
 
 ## Tests
 
@@ -95,6 +115,11 @@ npm run screenshots
 - The normalised case model is under `src/lib/onboarding/types.ts`.
 - The deterministic mock state engine is under `src/lib/onboarding/engine.ts`.
 - Adapter selection is under `src/lib/onboarding/adapters.ts`.
+- The live Pega client is under `src/lib/pega/` (config, token, transport,
+  schemas, mapper, errors).
+- Tool services Pega calls back into are under `src/lib/services/`.
+- Persistence and document storage abstractions are under `src/lib/store/` and
+  `src/lib/storage/`; both are interfaces with swappable implementations.
 - Demo-control and runbook documentation is under `docs/`.
 - Plugin recommendations for operational integrations are in `docs/plugin-recommendations.md`.
 - All demo data is fictional and no real regulatory services are invoked.

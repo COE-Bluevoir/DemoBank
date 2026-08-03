@@ -173,7 +173,7 @@ export function OnboardingFlow({
   );
 
   const refreshCase = useCallback(async () => {
-    const response = await fetch(`/api/onboarding/cases/${caseData.caseId}`, {
+    const response = await fetch(`/api/onboarding/cases/${encodeURIComponent(caseData.caseId)}`, {
       cache: "no-store",
     });
     const payload = await response.json();
@@ -204,7 +204,7 @@ export function OnboardingFlow({
     setError(null);
 
     try {
-      const response = await fetch(`/api/onboarding/cases/${caseData.caseId}/actions`, {
+      const response = await fetch(`/api/onboarding/cases/${encodeURIComponent(caseData.caseId)}/actions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -258,7 +258,7 @@ export function OnboardingFlow({
       formData.set("kind", kind);
       formData.set("file", file);
 
-      const response = await fetch(`/api/onboarding/cases/${caseData.caseId}/documents`, {
+      const response = await fetch(`/api/onboarding/cases/${encodeURIComponent(caseData.caseId)}/documents`, {
         method: "POST",
         body: formData,
       });
