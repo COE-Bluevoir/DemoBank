@@ -19,7 +19,11 @@ import {
   getPegaCaseStateStore,
   type PegaCaseState,
 } from "@/lib/pega/case-state-store";
-import { mapDxCaseToView, primaryAssignment } from "@/lib/pega/dx-mapper";
+import {
+  awaitsProblemFlowResolution,
+  mapDxCaseToView,
+  primaryAssignment,
+} from "@/lib/pega/dx-mapper";
 import {
   type DxCaseInfo,
   dxAttachmentUploadSchema,
@@ -221,6 +225,18 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       });
     }
 
+    // The case is parked in Pega's error-recovery flow. Only an operator can
+    // clear it, so the customer is shown the saved-application state rather
+    // than a step that would fail again.
+    if (awaitsProblemFlowResolution(caseInfo)) {
+      return mapDxCaseToView(caseInfo, {
+        scenarioId: state.scenarioId,
+        caseVersion: state.version,
+        correlationId: state.correlationId,
+        collected: state.collected,
+      });
+    }
+
     // Prefer the flow action the browser echoed back; fall back to the first
     // action Pega offers on the open assignment.
     const flowActionId =
@@ -350,8 +366,12 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         return caseInfo;
       }
 
-      // Never auto-advance past a step that needs an explicit customer act.
-      if (isGated(`${assignment.name ?? ""} ${nextActionId}`, state.collected)) {
+      // Never auto-advance past a step that needs an explicit customer act,
+      // and never submit into Pega's error-recovery flow.
+      if (
+        awaitsProblemFlowResolution(caseInfo) ||
+        isGated(`${assignment.name ?? ""} ${nextActionId}`, state.collected)
+      ) {
         return caseInfo;
       }
 

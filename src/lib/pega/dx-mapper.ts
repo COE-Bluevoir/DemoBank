@@ -116,6 +116,13 @@ export function mapDxStatus(caseInfo: DxCaseInfo): OnboardingStatus {
     STATUS_BY_STAGE_ID[caseInfo.stageID ?? ""] ??
     "STARTED";
 
+  // Pega routes a failed flow into an internal problem-flow assignment. That
+  // is an operational concern, never a customer step: showing it would loop
+  // the customer on a screen they cannot clear.
+  if (awaitsProblemFlowResolution(caseInfo)) {
+    return "UNABLE_TO_CONTINUE";
+  }
+
   // A verification stage normally means "please wait". If Pega has an open
   // assignment asking for a document, the customer has something to do, so the
   // uploader must be shown instead of a progress indicator.
@@ -141,6 +148,17 @@ function assignmentLabel(caseInfo: DxCaseInfo): string {
   }
 
   return normalize(`${assignment.name ?? ""} ${assignment.actions?.[0]?.ID ?? ""}`);
+}
+
+/**
+ * True when the open assignment is Pega's own error-recovery flow.
+ *
+ * Pega parks a case here when a flow action raises an exception. Only an
+ * operator can clear it, so the customer is shown the neutral saved-application
+ * message instead.
+ */
+export function awaitsProblemFlowResolution(caseInfo: DxCaseInfo): boolean {
+  return /problem flow|resumeproblemflow/.test(assignmentLabel(caseInfo));
 }
 
 /** True when Pega is waiting on information only the customer can give. */
@@ -393,6 +411,15 @@ export function mapDxCaseToView(
     assistantMessages: [],
     lastUpdatedAt: caseInfo.lastUpdateTime ?? new Date().toISOString(),
     outcome: mapOutcome(caseInfo),
+    alert:
+      status === "UNABLE_TO_CONTINUE"
+        ? {
+            title: "Application saved",
+            message:
+              "We could not complete one of the steps at this time. Your application has been saved, and no action is required from you right now.",
+            tone: "warning",
+          }
+        : undefined,
     statusDetail:
       status === "ROUTINE_REVIEW"
         ? "One of our onboarding specialists needs to complete a routine review."
