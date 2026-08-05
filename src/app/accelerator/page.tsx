@@ -73,6 +73,24 @@ export default function AcceleratorPage() {
             ))}
           </ul>
 
+          <Link
+            href="/accelerator/governance"
+            className="flex items-center justify-between rounded-[28px] border border-[var(--color-border)] bg-white p-6 transition hover:border-[var(--color-ink)]"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-[var(--color-ink)]">
+                AI governance console
+              </span>
+              <span className="mt-1 block text-sm text-[var(--color-ink-subtle)]">
+                How each AI decision was produced and grounded, and what
+                governed execution adds over answering alone.
+              </span>
+            </span>
+            <span aria-hidden className="text-[var(--color-ink-subtle)]">
+              →
+            </span>
+          </Link>
+
           <div className="rounded-[28px] bg-[var(--color-surface-soft)] p-6">
             <p className="text-sm font-semibold text-[var(--color-ink)]">
               What stays the same across industries

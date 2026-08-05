@@ -21,6 +21,7 @@ export const TOOL_NAMES = [
   "check-duplicate",
   "create-customer",
   "generate-communication",
+  "check-credit-bureau",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -144,6 +145,30 @@ export const screeningResultSchema = z.object({
     }),
   ),
   reasonCodes: z.array(z.string()),
+});
+
+/**
+ * Credit bureau enquiry.
+ *
+ * A soft search: it returns a score band and reason codes, never a lending
+ * decision. Whether the score is acceptable is a policy question owned by the
+ * workflow.
+ */
+export const creditBureauRequestSchema = z.object({
+  caseId: z.string().min(1),
+  fullName: z.string().min(1),
+  dateOfBirth: z.string().min(1),
+  postalCode: z.string().min(1),
+});
+
+export const creditBureauResultSchema = z.object({
+  outcome: z.enum(["PASSED", "CLEAR", "POTENTIAL_MATCH", "FAILED"]),
+  bureau: z.string(),
+  /** Band rather than a raw score: the exact number is not the website's business. */
+  scoreBand: z.enum(["EXCELLENT", "GOOD", "FAIR", "POOR", "NO_HISTORY"]),
+  fileFound: z.boolean(),
+  reasonCodes: z.array(z.string()),
+  enquiryType: z.literal("SOFT"),
 });
 
 export const duplicateCheckRequestSchema = z.object({

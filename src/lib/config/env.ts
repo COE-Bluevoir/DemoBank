@@ -87,6 +87,19 @@ const envSchema = z.object({
    * the filesystem is read-only and no memory is shared between requests.
    */
   STORAGE_DRIVER: z.enum(["file", "aws"]).optional().default("file"),
+
+  /**
+   * Which agent implementation answers customer messages.
+   *
+   * `deterministic` needs no AWS access and keeps the journey demonstrable;
+   * `bedrock` uses real inference. The contracts are identical either way.
+   */
+  AGENT_PROVIDER: z.enum(["deterministic", "bedrock"]).optional().default("deterministic"),
+  BEDROCK_REGION: z.string().min(1).optional(),
+  /** Routing and classification. Cheap model, high call volume. */
+  BEDROCK_MODEL_ID: z.string().min(1).optional().default("amazon.nova-2-lite-v1:0"),
+  /** Reasoning and extraction. Stronger model, lower call volume. */
+  BEDROCK_REASONING_MODEL_ID: z.string().min(1).optional().default("amazon.nova-pro-v1:0"),
   AWS_REGION: z.string().min(1).optional(),
   DYNAMODB_TABLE_NAME: z.string().min(1).optional(),
   S3_DOCUMENT_BUCKET: z.string().min(1).optional(),
@@ -114,6 +127,13 @@ export interface AwsStorageConfig {
   documentBucket: string;
 }
 
+export interface AgentConfig {
+  provider: "deterministic" | "bedrock";
+  region: string;
+  modelId: string;
+  reasoningModelId: string;
+}
+
 export interface ServerConfig {
   orchestrationMode: RawServerEnv["ORCHESTRATION_MODE"];
   defaultScenarioId: RawServerEnv["DEMO_SCENARIO"];
@@ -122,6 +142,7 @@ export interface ServerConfig {
   serviceApiKey?: string;
   documentStorageDir?: string;
   storageDriver: RawServerEnv["STORAGE_DRIVER"];
+  agents: AgentConfig;
   /** Present only when the AWS driver is selected and fully configured. */
   aws?: AwsStorageConfig;
   /** Present only when every required Pega variable is configured. */
@@ -220,6 +241,13 @@ function loadConfig(source: EnvSource): ServerConfig {
     serviceApiKey: env.SERVICE_API_KEY,
     documentStorageDir: env.DOCUMENT_STORAGE_DIR,
     storageDriver: env.STORAGE_DRIVER,
+    agents: {
+      provider: env.AGENT_PROVIDER,
+      // Bedrock inherits the general AWS region unless given its own.
+      region: env.BEDROCK_REGION ?? env.AWS_REGION ?? "us-east-1",
+      modelId: env.BEDROCK_MODEL_ID,
+      reasoningModelId: env.BEDROCK_REASONING_MODEL_ID,
+    },
     aws:
       env.STORAGE_DRIVER === "aws"
         ? {

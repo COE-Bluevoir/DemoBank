@@ -4,6 +4,7 @@ import {
   TOOL_NAMES,
   type ToolName,
   createCustomerRequestSchema,
+  creditBureauRequestSchema,
   duplicateCheckRequestSchema,
   extractAddressRequestSchema,
   extractIdentityRequestSchema,
@@ -23,6 +24,7 @@ import {
   generateCommunication,
 } from "@/lib/services/handlers/fulfilment";
 import {
+  checkCreditBureau,
   checkDuplicate,
   screenPep,
   screenSanctions,
@@ -103,6 +105,15 @@ const REGISTRY: Record<ToolName, ToolDefinition> = {
     provider: "northstar-mock-screening",
     requestSchema: screeningRequestSchema,
     handler: screenPep,
+    requiresIdempotencyKey: false,
+  }),
+  "check-credit-bureau": define({
+    name: "check-credit-bureau",
+    version: "1.0.0",
+    provider: "northstar-mock-credit-bureau",
+    requestSchema: creditBureauRequestSchema,
+    handler: checkCreditBureau,
+    // A soft enquiry leaves no footprint on the applicant's file.
     requiresIdempotencyKey: false,
   }),
   "check-duplicate": define({

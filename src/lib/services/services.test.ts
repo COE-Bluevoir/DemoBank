@@ -270,6 +270,7 @@ describe("tool registry", () => {
   it("exposes exactly the approved tool allowlist", () => {
     expect(listTools().map((tool) => tool.name).sort()).toEqual(
       [
+        "check-credit-bureau",
         "check-duplicate",
         "create-customer",
         "extract-address",

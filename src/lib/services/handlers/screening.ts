@@ -3,6 +3,8 @@ import { z } from "zod";
 import { formatFullName } from "@/lib/onboarding/applicant-name";
 import { DEMO_CUSTOMER } from "@/lib/onboarding/constants";
 import type {
+  creditBureauRequestSchema,
+  creditBureauResultSchema,
   duplicateCheckRequestSchema,
   duplicateCheckResultSchema,
   screeningRequestSchema,
@@ -26,6 +28,8 @@ type ScreeningRequest = z.infer<typeof screeningRequestSchema>;
 type ScreeningResult = z.infer<typeof screeningResultSchema>;
 type DuplicateCheckRequest = z.infer<typeof duplicateCheckRequestSchema>;
 type DuplicateCheckResult = z.infer<typeof duplicateCheckResultSchema>;
+type CreditBureauRequest = z.infer<typeof creditBureauRequestSchema>;
+type CreditBureauResult = z.infer<typeof creditBureauResultSchema>;
 
 const SANCTIONS_LISTS = [
   "UN Consolidated",
@@ -102,5 +106,45 @@ export function checkDuplicate(
     outcome: "CLEAR",
     matchConfidence: deterministicScore(seed, 0.0, 0.05),
     reasonCodes: ["NO_EXISTING_CUSTOMER_MATCH"],
+  };
+}
+
+/**
+ * Credit bureau enquiry.
+ *
+ * Returns a score band and reason codes. It deliberately does not say whether
+ * the applicant should be accepted: that is a policy decision the workflow
+ * owns, and a bureau that returned verdicts would be making it for them.
+ */
+export function checkCreditBureau(
+  request: CreditBureauRequest,
+): CreditBureauResult {
+  const seed = `bureau:${request.caseId}:${request.fullName}:${request.postalCode}`;
+  const score = deterministicScore(seed, 0, 1);
+
+  // Bands rather than a raw number, so nothing downstream can quietly start
+  // treating a score as a threshold.
+  const scoreBand =
+    score > 0.8
+      ? "EXCELLENT"
+      : score > 0.6
+        ? "GOOD"
+        : score > 0.35
+          ? "FAIR"
+          : score > 0.15
+            ? "POOR"
+            : "NO_HISTORY";
+
+  const fileFound = scoreBand !== "NO_HISTORY";
+
+  return {
+    outcome: fileFound ? "PASSED" : "POTENTIAL_MATCH",
+    bureau: "northstar-mock-credit-bureau",
+    scoreBand,
+    fileFound,
+    reasonCodes: fileFound
+      ? ["FILE_FOUND", "IDENTITY_CORROBORATED"]
+      : ["NO_CREDIT_FILE", "MANUAL_REVIEW_RECOMMENDED"],
+    enquiryType: "SOFT",
   };
 }

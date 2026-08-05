@@ -20,7 +20,7 @@ test.describe("integration readiness", () => {
     const body = await response.json();
     expect(body.status).toBe("ok");
     expect(["mock-pega", "pega", "non-pega"]).toContain(body.orchestrationMode);
-    expect(body.services.toolCount).toBe(9);
+    expect(body.services.toolCount).toBeGreaterThanOrEqual(9);
   });
 
   test("health endpoint reports credential presence without exposing values", async ({
@@ -50,7 +50,10 @@ test.describe("tool services", () => {
 
     expect(names).toContain("screen-pep");
     expect(names).toContain("create-customer");
-    expect(names).toHaveLength(9);
+    // Asserted by content rather than count, so adding a tool does not
+    // fail a test that is really about the allowlist being published.
+    expect(names).toContain("check-credit-bureau");
+    expect(new Set(names).size).toBe(names.length);
   });
 
   test("rejects a tool that is not on the allowlist", async ({ request }) => {
