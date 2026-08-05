@@ -13,7 +13,8 @@ import { expect, test } from "@playwright/test";
 
 /** Complete applicant profile. Fictional, matching the demo persona. */
 const APPLICANT = {
-  fullName: "Ananya Rao",
+  firstName: "Ananya",
+  lastName: "Rao",
   dateOfBirth: "1992-08-14",
   nationality: "Indian",
   mobile: "+91 90000 00000",
@@ -63,10 +64,11 @@ test("customer completes the Everyday Plus journey with every field filled", asy
   });
 
   await test.step("complete every personal detail field", async () => {
-    const form = page.getByLabel("Full legal name");
+    const form = page.getByLabel("First name");
     await expect(form).toBeVisible({ timeout: 60_000 });
 
-    await page.getByLabel("Full legal name").fill(APPLICANT.fullName);
+    await page.getByLabel("First name").fill(APPLICANT.firstName);
+    await page.getByLabel("Last name").fill(APPLICANT.lastName);
     await page.getByLabel("Date of birth").fill(APPLICANT.dateOfBirth);
     await page.getByLabel("Nationality").fill(APPLICANT.nationality);
     await page.getByLabel("Mobile number").fill(APPLICANT.mobile);
@@ -86,7 +88,8 @@ test("customer completes the Everyday Plus journey with every field filled", asy
 
     // Confirm nothing was left blank before submitting.
     for (const [label, value] of [
-      ["Full legal name", APPLICANT.fullName],
+      ["First name", APPLICANT.firstName],
+      ["Last name", APPLICANT.lastName],
       ["Nationality", APPLICANT.nationality],
       ["Employment status", APPLICANT.employmentStatus],
       ["Income range", APPLICANT.incomeRange],

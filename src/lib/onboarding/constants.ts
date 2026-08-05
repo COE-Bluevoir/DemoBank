@@ -14,7 +14,8 @@ export const BRAND = {
 };
 
 export const DEMO_CUSTOMER: ApplicantView = {
-  fullName: "Ananya Rao",
+  firstName: "Ananya",
+  lastName: "Rao",
   dateOfBirth: "1992-08-14",
   nationality: "Indian",
   mobile: "+91 90000 00000",

@@ -44,6 +44,7 @@ describe("onboarding engine", () => {
         productCode: "EVERYDAY_PLUS",
         channel: "WEB",
         scenarioId: "ADDRESS_PEP_REVIEW",
+        industryId: "banking",
       },
       "mock-pega",
     );
@@ -108,6 +109,7 @@ describe("onboarding engine", () => {
         productCode: "EVERYDAY_PLUS",
         channel: "WEB",
         scenarioId: "HAPPY_PATH",
+        industryId: "banking",
       },
       "mock-pega",
     );

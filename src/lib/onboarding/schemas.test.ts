@@ -8,7 +8,9 @@ import {
 
 describe("validation schemas", () => {
   it("accepts the demo applicant profile", () => {
-    expect(applicantSchema.parse(DEMO_CUSTOMER).fullName).toBe("Ananya Rao");
+    const parsed = applicantSchema.parse(DEMO_CUSTOMER);
+    expect(parsed.firstName).toBe("Ananya");
+    expect(parsed.lastName).toBe("Rao");
   });
 
   it("rejects unsupported upload types", () => {

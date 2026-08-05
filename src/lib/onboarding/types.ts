@@ -1,3 +1,5 @@
+import type { IndustryId } from "@/lib/industry/types";
+
 export type OrchestrationMode = "mock-pega" | "pega" | "non-pega";
 
 export type ScenarioId =
@@ -28,7 +30,12 @@ export type DocumentKind = "IDENTITY" | "ADDRESS";
 export type DocumentStatus = "UPLOADED" | "VERIFIED" | "REQUIRES_ACTION";
 
 export interface ApplicantView {
-  fullName: string;
+  /**
+   * Captured separately from the last name. Pega stores the two as a single
+   * `ApplicantName`, so they are composed at the adapter boundary.
+   */
+  firstName: string;
+  lastName: string;
   dateOfBirth: string;
   nationality: string;
   mobile: string;
@@ -114,6 +121,8 @@ export interface OnboardingCaseView {
   correlationId: string;
   orchestrationMode: OrchestrationMode;
   scenarioId: ScenarioId;
+  /** Configuration pack this journey is presented with. */
+  industryId: IndustryId;
   status: OnboardingStatus;
   customerSafeStatus: string;
   currentAction?: OnboardingAction;
@@ -142,6 +151,14 @@ export interface CreateOnboardingCaseRequest {
   productCode: "EVERYDAY_PLUS";
   channel: "WEB";
   scenarioId: ScenarioId;
+  /**
+   * Which industry configuration drove this application.
+   *
+   * The orchestration layer runs one common onboarding flow for every
+   * industry; this only tells the customer-facing experience which pack's
+   * branding, vocabulary and evidence list to render.
+   */
+  industryId: IndustryId;
 }
 
 export interface CreateOnboardingCaseResponse {
@@ -200,6 +217,7 @@ export interface InternalOnboardingCase {
   correlationId: string;
   orchestrationMode: OrchestrationMode;
   scenarioId: ScenarioId;
+  industryId: IndustryId;
   status: OnboardingStatus;
   customerSafeStatus: string;
   createdAt: string;

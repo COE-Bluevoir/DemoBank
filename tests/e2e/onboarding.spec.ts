@@ -8,7 +8,8 @@ test("happy-path onboarding can complete", async ({ page }) => {
 
   await page.goto("/onboarding/start");
   await page.getByRole("button", { name: "Begin application" }).click();
-  await page.getByLabel("Full legal name").fill("Ananya Rao");
+  await page.getByLabel("First name").fill("Ananya");
+  await page.getByLabel("Last name").fill("Rao");
   await page.getByLabel("Date of birth").fill("1992-08-14");
   await page.getByLabel("Nationality").fill("Indian");
   await page.getByLabel("Mobile number").fill("+91 90000 00000");
@@ -39,7 +40,8 @@ test("address mismatch requires explicit confirmation", async ({ page }) => {
   await page.getByLabel("Scenario").selectOption("ADDRESS_PEP_REVIEW");
   await page.goto("/onboarding/start");
   await page.getByRole("button", { name: "Begin application" }).click();
-  await page.getByLabel("Full legal name").fill("Ananya Rao");
+  await page.getByLabel("First name").fill("Ananya");
+  await page.getByLabel("Last name").fill("Rao");
   await page.getByLabel("Date of birth").fill("1992-08-14");
   await page.getByLabel("Nationality").fill("Indian");
   await page.getByLabel("Mobile number").fill("+91 90000 00000");
@@ -75,7 +77,8 @@ test("routine review can be cleared from demo control", async ({ page, context }
   const customerPage = await context.newPage();
   await customerPage.goto("/onboarding/start");
   await customerPage.getByRole("button", { name: "Begin application" }).click();
-  await customerPage.getByLabel("Full legal name").fill("Ananya Rao");
+  await customerPage.getByLabel("First name").fill("Ananya");
+  await customerPage.getByLabel("Last name").fill("Rao");
   await customerPage.getByLabel("Date of birth").fill("1992-08-14");
   await customerPage.getByLabel("Nationality").fill("Indian");
   await customerPage.getByLabel("Mobile number").fill("+91 90000 00000");
@@ -107,7 +110,8 @@ test("routine review can be cleared from demo control", async ({ page, context }
 test("refresh resumes the persisted case", async ({ page }) => {
   await page.goto("/onboarding/start");
   await page.getByRole("button", { name: "Begin application" }).click();
-  await page.getByLabel("Full legal name").fill("Ananya Rao");
+  await page.getByLabel("First name").fill("Ananya");
+  await page.getByLabel("Last name").fill("Rao");
   await page.reload();
   await expect(page.getByText("Everyday Plus account application")).toBeVisible();
 });
@@ -119,7 +123,8 @@ test("service timeout shows a customer-safe error", async ({ page }) => {
   await page.getByLabel("Scenario").selectOption("SERVICE_TIMEOUT");
   await page.goto("/onboarding/start");
   await page.getByRole("button", { name: "Begin application" }).click();
-  await page.getByLabel("Full legal name").fill("Ananya Rao");
+  await page.getByLabel("First name").fill("Ananya");
+  await page.getByLabel("Last name").fill("Rao");
   await page.getByLabel("Date of birth").fill("1992-08-14");
   await page.getByLabel("Nationality").fill("Indian");
   await page.getByLabel("Mobile number").fill("+91 90000 00000");

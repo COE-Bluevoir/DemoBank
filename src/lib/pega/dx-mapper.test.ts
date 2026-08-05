@@ -38,6 +38,7 @@ function caseInfo(overrides: Partial<DxCaseInfo> = {}): DxCaseInfo {
 
 const context = {
   scenarioId: "ADDRESS_PEP_REVIEW" as const,
+  industryId: "banking" as const,
   caseVersion: 3,
   correlationId: "corr-abc",
 };
@@ -223,7 +224,8 @@ describe("DX v2 case view mapping", () => {
       context,
     );
 
-    expect(view.applicant?.fullName).toBe("Ananya Rao");
+    expect(view.applicant?.firstName).toBe("Ananya");
+    expect(view.applicant?.lastName).toBe("Rao");
     expect(view.applicant?.email).toBe("a@example.test");
     expect(view.applicant?.addressLine1).toBe("18 Lake View Road");
     expect(view.applicant?.city).toBe("Hyderabad");

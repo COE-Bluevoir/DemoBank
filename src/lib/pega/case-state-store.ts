@@ -2,6 +2,7 @@ import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 import { getDynamoClient, requireAwsConfig } from "@/lib/aws/clients";
 import { getServerConfig } from "@/lib/config/env";
+import type { IndustryId } from "@/lib/industry/types";
 import type { ScenarioId } from "@/lib/onboarding/types";
 
 /**
@@ -18,6 +19,11 @@ import type { ScenarioId } from "@/lib/onboarding/types";
 
 export interface PegaCaseState {
   scenarioId: ScenarioId;
+  /**
+   * Presentation-only. Pega runs one common onboarding flow for every
+   * industry, so this never crosses the orchestration boundary.
+   */
+  industryId: IndustryId;
   correlationId: string;
   version: number;
   eTag?: string;

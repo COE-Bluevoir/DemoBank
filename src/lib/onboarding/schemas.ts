@@ -7,7 +7,8 @@ import {
 } from "@/lib/onboarding/constants";
 
 export const applicantSchema = z.object({
-  fullName: z.string().min(3, "Enter the full legal name."),
+  firstName: z.string().trim().min(1, "Enter the first name."),
+  lastName: z.string().trim().min(1, "Enter the last name."),
   dateOfBirth: z.string().min(1, "Enter the date of birth."),
   nationality: z.string().min(2, "Enter the nationality."),
   mobile: z.string().min(8, "Enter the mobile number."),
@@ -38,6 +39,7 @@ export const createCaseSchema = z.object({
   productCode: z.literal("EVERYDAY_PLUS"),
   channel: z.literal("WEB"),
   scenarioId: z.enum(["ADDRESS_PEP_REVIEW", "HAPPY_PATH", "SERVICE_TIMEOUT"]),
+  industryId: z.enum(["banking", "insurance", "telecom"]).default("banking"),
 });
 
 export const submitActionSchema = z.object({

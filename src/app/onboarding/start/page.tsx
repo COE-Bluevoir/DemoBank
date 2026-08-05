@@ -1,14 +1,18 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import { BankHeader } from "@/components/bank-header";
 import { Button, Card, SectionTitle } from "@/components/ui";
-import { BRAND } from "@/lib/onboarding/constants";
+import { resolveIndustryPack } from "@/lib/industry/registry";
 
-export default function OnboardingStartPage() {
+function OnboardingStartExperience() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Which industry configuration the customer arrived from. Unknown or absent
+  // values fall back to the reference implementation.
+  const pack = resolveIndustryPack(searchParams.get("industry") ?? undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,6 +27,7 @@ export default function OnboardingStartPage() {
         productCode: "EVERYDAY_PLUS",
         channel: "WEB",
         scenarioId: "ADDRESS_PEP_REVIEW",
+        industryId: pack.id,
       }),
     });
 
@@ -64,7 +69,7 @@ export default function OnboardingStartPage() {
         <Card className="space-y-8">
           <SectionTitle
             eyebrow="Open an account"
-            title={`Open your ${BRAND.productName}`}
+            title={`Open your ${pack.brand.productName}`}
             description="Start your application in a guided digital flow with clear requirements, secure document handling and progress updates throughout."
           />
           <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
@@ -112,5 +117,17 @@ export default function OnboardingStartPage() {
         </Card>
       </main>
     </div>
+  );
+}
+
+/**
+ * The industry is read from the query string, which requires a Suspense
+ * boundary so the shell can still be prerendered.
+ */
+export default function OnboardingStartPage() {
+  return (
+    <Suspense fallback={null}>
+      <OnboardingStartExperience />
+    </Suspense>
   );
 }

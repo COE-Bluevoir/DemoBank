@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { formatFullName } from "@/lib/onboarding/applicant-name";
 import {
   DEMO_CUSTOMER,
   DOCUMENT_MISMATCH_ADDRESS,
@@ -43,7 +44,7 @@ export function extractIdentity(
   const seed = `${request.caseId}:${request.storageReference}`;
 
   return {
-    fullName: DEMO_CUSTOMER.fullName,
+    fullName: formatFullName(DEMO_CUSTOMER),
     dateOfBirth: DEMO_CUSTOMER.dateOfBirth,
     documentNumber: deterministicReference("IDN", seed),
     documentType: "NATIONAL_ID",

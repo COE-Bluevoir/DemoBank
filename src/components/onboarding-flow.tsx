@@ -18,6 +18,8 @@ import { SuccessSummary } from "@/components/success-summary";
 import { RoutineReviewStatus } from "@/components/routine-review-status";
 import { VerificationProgress } from "@/components/verification-progress";
 import { Badge, Button, Card, SelectInput, TextInput } from "@/components/ui";
+import { getIndustryPack } from "@/lib/industry/registry";
+import type { IndustryPack } from "@/lib/industry/types";
 import { applicantSchema } from "@/lib/onboarding/schemas";
 import type {
   ApplicantView,
@@ -30,10 +32,12 @@ function ApplicantForm({
   initialValues,
   busy,
   onSubmit,
+  pack,
 }: {
   initialValues?: ApplicantView;
   busy?: boolean;
   onSubmit: (value: ApplicantView) => void;
+  pack: IndustryPack;
 }) {
   const form = useForm<ApplicantView>({
     resolver: zodResolver(applicantSchema),
@@ -46,43 +50,9 @@ function ApplicantForm({
     }
   }, [form, initialValues]);
 
-  const fields: Array<{
-    key: keyof ApplicantView;
-    label: string;
-    type?: string;
-    options?: string[];
-  }> = [
-    { key: "fullName", label: "Full legal name" },
-    { key: "dateOfBirth", label: "Date of birth", type: "date" },
-    { key: "nationality", label: "Nationality" },
-    { key: "mobile", label: "Mobile number" },
-    { key: "email", label: "Email address", type: "email" },
-    { key: "addressLine1", label: "Residential address" },
-    { key: "city", label: "City" },
-    { key: "region", label: "State or region" },
-    { key: "postalCode", label: "Postal code" },
-    { key: "country", label: "Country" },
-    {
-      key: "employmentStatus",
-      label: "Employment status",
-      options: ["Salaried", "Self-employed", "Student", "Other"],
-    },
-    {
-      key: "incomeRange",
-      label: "Income range",
-      options: [
-        "INR 0-5 lakh per annum",
-        "INR 5-10 lakh per annum",
-        "INR 10-15 lakh per annum",
-        "INR 15 lakh+ per annum",
-      ],
-    },
-    {
-      key: "taxResidency",
-      label: "Tax residency",
-      options: ["India", "United Kingdom", "United States", "Other"],
-    },
-  ];
+  // Intake is configuration-driven: which details are collected, what they are
+  // called, and which are dropdowns all come from the industry pack.
+  const fields = pack.intakeFields;
 
   return (
     <CustomerFormSection
@@ -141,6 +111,12 @@ export function OnboardingFlow({
   presenterMode?: boolean;
 }) {
   const [caseData, setCaseData] = useState(initialCase);
+  // The case records which configuration pack it was started from, so a
+  // resumed journey keeps the right branding and vocabulary.
+  const pack = useMemo(
+    () => getIndustryPack(caseData.industryId),
+    [caseData.industryId],
+  );
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState<{
     kind: DocumentKind;
@@ -310,6 +286,7 @@ export function OnboardingFlow({
     if (caseData.status === "INFORMATION_REQUIRED" && !caseData.applicant) {
       return (
         <ApplicantForm
+              pack={pack}
           initialValues={caseData.applicant}
           busy={busy}
           onSubmit={(value) =>

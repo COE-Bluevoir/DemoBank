@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { requirePegaConfig } from "@/lib/config/env";
+import { formatFullName } from "@/lib/onboarding/applicant-name";
 import { getDocumentStorage } from "@/lib/storage/document-storage";
 import type {
   AssistantMessage,
@@ -83,6 +84,7 @@ async function loadState(caseId: string): Promise<CaseIntegrationState> {
 
   return {
     scenarioId: "ADDRESS_PEP_REVIEW",
+    industryId: "banking",
     correlationId: `corr-${caseId}`,
     version: 1,
     collected: {},
@@ -176,11 +178,13 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
 
     await saveState(caseInfo.ID, {
       scenarioId: request.scenarioId,
+      industryId: request.industryId,
       correlationId,
       version: 1,
       eTag,
       lastUpdateTime: caseInfo.lastUpdateTime,
-      collected: {},
+      // Seeded so later steps that ask for the product again can answer.
+      collected: { productIntent: request.productCode },
     });
 
     return {
@@ -197,6 +201,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
 
     return mapDxCaseToView(caseInfo, {
       scenarioId: state.scenarioId,
+      industryId: state.industryId,
       caseVersion: state.version,
       correlationId: state.correlationId,
       collected: state.collected,
@@ -231,6 +236,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     if (awaitsProblemFlowResolution(caseInfo)) {
       return mapDxCaseToView(caseInfo, {
         scenarioId: state.scenarioId,
+        industryId: state.industryId,
         caseVersion: state.version,
         correlationId: state.correlationId,
         collected: state.collected,
@@ -259,7 +265,9 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     // asks again is answered without re-prompting them.
     state.collected = { ...state.collected, ...(request.data ?? {}) };
     await saveState(caseId, state);
-    const content = toPegaContent(state.collected);
+    const content = toPegaContent(state.collected, {
+      correlationId: state.correlationId,
+    });
 
     // The sample-document path must produce real attachments in Pega, not a
     // metadata-only shortcut, so the demo exercises the same route as a
@@ -278,6 +286,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     if (isGated(gateLabel, state.collected)) {
       return mapDxCaseToView(caseInfo, {
         scenarioId: state.scenarioId,
+        industryId: state.industryId,
         caseVersion: state.version,
         correlationId: state.correlationId,
         collected: state.collected,
@@ -315,6 +324,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
 
     return mapDxCaseToView(caseInfoAfter, {
       scenarioId: updated.scenarioId,
+      industryId: updated.industryId,
       caseVersion: updated.version,
       correlationId: updated.correlationId,
       collected: updated.collected,
@@ -339,6 +349,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     const stepSignature = (info: DxCaseInfo, state: CaseIntegrationState) => {
       const view = mapDxCaseToView(info, {
         scenarioId: state.scenarioId,
+        industryId: state.industryId,
         caseVersion: state.version,
         correlationId: state.correlationId,
         collected: state.collected,
@@ -556,7 +567,9 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       body: {
         content: restrictToAcceptedFields(
           {
-            ...toPegaContent(state.collected),
+            ...toPegaContent(state.collected, {
+              correlationId: state.correlationId,
+            }),
             Document: [
               {
                 DocumentName: document.fileName,
@@ -566,6 +579,10 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
                   document.kind,
                   allowedValuesFor(view.fields, "DocumentType"),
                 ),
+                // Pega exposes a document number, but the journey does not ask
+                // the customer for one. Sent only if a value is ever captured;
+                // an invented number would be worse than an absent one.
+                DocumentNumber: text(state.collected.documentNumber),
               },
             ],
           },
@@ -709,6 +726,14 @@ function isGated(
     (gate) => gate.pattern.test(actionLabel) && !gate.satisfied(collected),
   );
 }
+
+/**
+ * Identifies this website in Pega's execution audit trail.
+ *
+ * Pega's `Execution` page list records which agent or channel drove a step;
+ * the digital journey is one of several possible actors on a case.
+ */
+const DIGITAL_CHANNEL_AGENT = "NorthStar Digital Onboarding";
 
 /** Pega-internal property prefixes that are never customer-submittable. */
 const PEGA_RESERVED_PREFIXES = ["px", "py", "pz", "classID"];
@@ -867,22 +892,42 @@ function composeAddress(data: Record<string, unknown>): string | undefined {
  * page-typed fields. Only known fields are forwarded; arbitrary browser input
  * is never spread into a case's clipboard.
  */
-function toPegaContent(data: Record<string, unknown> | undefined) {
+function toPegaContent(
+  data: Record<string, unknown> | undefined,
+  context: { correlationId: string },
+) {
   if (!data) {
     return {};
   }
 
   const content: Record<string, unknown> = {};
-  const fullName = text(data.fullName);
+  const firstName = text(data.firstName) ?? "";
+  const lastName = text(data.lastName) ?? "";
+  const fullName = formatFullName({ firstName, lastName });
   const address = composeAddress(data) ?? text(data.selectedAddress);
+
+  // Channel and session context identify the origin of every submission, and
+  // Pega exposes them on more than the creation step, so they are always sent.
+  content.Channel = String(data.channel ?? "WEB");
+  content.SessionContext = context.correlationId;
+
+  // Carried on every step because Pega asks for it again at product selection,
+  // not only at case creation.
+  const productIntent = text(data.productIntent) ?? text(data.productName);
+
+  if (productIntent) {
+    content.ProductIntent = productIntent;
+  }
 
   if (fullName) {
     content.CustomerOnboardingName = fullName;
     content.Applicant = {
-      // `ApplicantName` is the only property the verified case type defines
-      // today. The rest are offered so that if the Pega team adds them to the
-      // Applicant page, they populate with no website change.
+      // `ApplicantName` is the only name property the verified case type
+      // defines today. First and last are offered separately so they populate
+      // automatically if the Pega team adds them to the Applicant page.
       ApplicantName: fullName,
+      FirstName: firstName || undefined,
+      LastName: lastName || undefined,
       DateOfBirth: text(data.dateOfBirth),
       Nationality: text(data.nationality),
       Mobile: text(data.mobile),
@@ -904,10 +949,6 @@ function toPegaContent(data: Record<string, unknown> | undefined) {
     };
   }
 
-  if (text(data.productName)) {
-    content.ProductIntent = text(data.productName);
-  }
-
   if (data.accepted === true) {
     content.Consent = {
       // The verified case type defines `ConsentName` only.
@@ -916,20 +957,18 @@ function toPegaContent(data: Record<string, unknown> | undefined) {
       ConsentVersion: text(data.textVersion),
       ConsentTimestamp: text(data.timestamp),
     };
-    content.Channel = String(data.channel ?? "WEB");
   }
 
-  const documentName = text(data.documentName);
-
-  if (documentName) {
-    content.Document = [
-      {
-        DocumentName: documentName,
-        DocumentType: text(data.documentType) ?? "",
-        DocumentNumber: text(data.documentNumber) ?? "",
-      },
-    ];
-  }
+  // Pega's execution page list is its agentic audit trail. Carrying the
+  // correlation ID here is what lets a Pega-side trace be tied back to a
+  // specific request in this application's logs.
+  content.Execution = [
+    {
+      ExecutionName: "Digital onboarding journey",
+      AgentName: DIGITAL_CHANNEL_AGENT,
+      CorrelationID: context.correlationId,
+    },
+  ];
 
   return content;
 }

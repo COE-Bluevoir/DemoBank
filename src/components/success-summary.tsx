@@ -14,7 +14,7 @@ export function SuccessSummary({
     <Card className="space-y-6">
       <SectionTitle
         eyebrow="Welcome"
-        title={`Welcome to NorthStar Bank, ${caseData.applicant?.fullName?.split(" ")[0] || "customer"}.`}
+        title={`Welcome to NorthStar Bank, ${caseData.applicant?.firstName || "customer"}.`}
         description={`Your ${caseData.outcome?.productName || "account"} has been opened successfully.`}
       />
       <div className="grid gap-4 rounded-[28px] bg-[var(--color-surface-soft)] p-5 md:grid-cols-2">

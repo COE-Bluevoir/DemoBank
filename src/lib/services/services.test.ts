@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { formatFullName } from "@/lib/onboarding/applicant-name";
 import { DEMO_CUSTOMER, DOCUMENT_MISMATCH_ADDRESS } from "@/lib/onboarding/constants";
 import {
   extractAddress,
@@ -62,7 +63,7 @@ describe("extraction tools", () => {
   it("passes identity verification for a consistent applicant", () => {
     const result = verifyIdentity({
       caseId: "ONB-10027",
-      fullName: DEMO_CUSTOMER.fullName,
+      fullName: formatFullName(DEMO_CUSTOMER),
       dateOfBirth: DEMO_CUSTOMER.dateOfBirth,
       documentNumber: "IDN-123456",
     });
@@ -123,7 +124,7 @@ describe("address validation", () => {
 describe("screening tools", () => {
   const request = {
     caseId: "ONB-10027",
-    fullName: DEMO_CUSTOMER.fullName,
+    fullName: formatFullName(DEMO_CUSTOMER),
     dateOfBirth: DEMO_CUSTOMER.dateOfBirth,
     nationality: DEMO_CUSTOMER.nationality,
   };
@@ -154,7 +155,7 @@ describe("screening tools", () => {
   it("clears the duplicate check", () => {
     const result = checkDuplicate({
       caseId: "ONB-10027",
-      fullName: DEMO_CUSTOMER.fullName,
+      fullName: formatFullName(DEMO_CUSTOMER),
       dateOfBirth: DEMO_CUSTOMER.dateOfBirth,
       email: DEMO_CUSTOMER.email,
       mobile: DEMO_CUSTOMER.mobile,
@@ -170,7 +171,7 @@ describe("fulfilment tools", () => {
     caseId: "ONB-10027",
     productCode: "EVERYDAY_PLUS",
     applicant: {
-      fullName: DEMO_CUSTOMER.fullName,
+      fullName: formatFullName(DEMO_CUSTOMER),
       dateOfBirth: DEMO_CUSTOMER.dateOfBirth,
       email: DEMO_CUSTOMER.email,
       mobile: DEMO_CUSTOMER.mobile,

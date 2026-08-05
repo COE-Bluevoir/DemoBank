@@ -1,3 +1,5 @@
+import type { IndustryId } from "@/lib/industry/types";
+import { splitFullName } from "@/lib/onboarding/applicant-name";
 import { BRAND, CASE_PROGRESS_STEPS, CUSTOMER_SAFE_STATUS } from "@/lib/onboarding/constants";
 import type {
   DocumentView,
@@ -291,16 +293,21 @@ function mapApplicant(caseInfo: DxCaseInfo): OnboardingCaseView["applicant"] {
   const applicant = nestedContent(caseInfo.content, "Applicant");
   const address = nestedContent(caseInfo.content, "Address");
 
-  const fullName =
+  const storedName =
     contentString(applicant, "ApplicantName") ??
     contentString(caseInfo.content, "CustomerOnboardingName");
 
-  if (!fullName) {
+  if (!storedName) {
     return undefined;
   }
 
+  // Pega stores one string; prefer its own first/last properties if the case
+  // type ever gains them, and otherwise recover the parts from the single name.
+  const recovered = splitFullName(storedName);
+
   return {
-    fullName,
+    firstName: contentString(applicant, "FirstName") ?? recovered.firstName,
+    lastName: contentString(applicant, "LastName") ?? recovered.lastName,
     dateOfBirth: contentString(applicant, "DateOfBirth") ?? "",
     nationality: contentString(applicant, "Nationality") ?? "",
     mobile: contentString(applicant, "Mobile") ?? "",
@@ -328,17 +335,19 @@ function mapApplicant(caseInfo: DxCaseInfo): OnboardingCaseView["applicant"] {
 function collectedApplicant(
   collected: Record<string, unknown> | undefined,
 ): OnboardingCaseView["applicant"] {
-  const fullName = collected?.fullName;
-
-  if (typeof fullName !== "string" || fullName.trim().length === 0) {
-    return undefined;
-  }
-
   const value = (key: string) =>
     typeof collected?.[key] === "string" ? (collected[key] as string) : "";
 
+  const firstName = value("firstName");
+  const lastName = value("lastName");
+
+  if (firstName.trim().length === 0 && lastName.trim().length === 0) {
+    return undefined;
+  }
+
   return {
-    fullName,
+    firstName,
+    lastName,
     dateOfBirth: value("dateOfBirth"),
     nationality: value("nationality"),
     mobile: value("mobile"),
@@ -380,6 +389,7 @@ export function mapDxCaseToView(
   caseInfo: DxCaseInfo,
   context: {
     scenarioId: ScenarioId;
+    industryId: IndustryId;
     caseVersion: number;
     correlationId: string;
     /**
@@ -400,6 +410,7 @@ export function mapDxCaseToView(
     correlationId: context.correlationId,
     orchestrationMode: "pega",
     scenarioId: context.scenarioId,
+    industryId: context.industryId,
     status,
     customerSafeStatus: CUSTOMER_SAFE_STATUS[status],
     currentAction: buildCurrentAction(caseInfo, status),

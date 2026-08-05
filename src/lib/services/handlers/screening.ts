@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { formatFullName } from "@/lib/onboarding/applicant-name";
 import { DEMO_CUSTOMER } from "@/lib/onboarding/constants";
 import type {
   duplicateCheckRequestSchema,
@@ -36,7 +37,7 @@ const SANCTIONS_LISTS = [
 const PEP_LISTS = ["Global PEP Register", "Domestic PEP Register"];
 
 /** The scripted scenario raises a low-confidence PEP candidate for this name. */
-const PEP_REVIEW_NAME = normalizeForComparison(DEMO_CUSTOMER.fullName);
+const PEP_REVIEW_NAME = normalizeForComparison(formatFullName(DEMO_CUSTOMER));
 
 export function screenSanctions(request: ScreeningRequest): ScreeningResult {
   const seed = `sanctions:${request.caseId}:${request.fullName}`;

@@ -14,10 +14,16 @@ const mono = IBM_Plex_Mono({
   weight: ["400", "500"],
 });
 
+/**
+ * Neutral platform-level metadata.
+ *
+ * Industry surfaces override this with their own branding; a bank title must
+ * never appear on the insurance or telecom experience.
+ */
 export const metadata: Metadata = {
-  title: "NorthStar Bank | Everyday Plus Account Opening",
+  title: "Client onboarding accelerator",
   description:
-    "Open an Everyday Plus Account with NorthStar Bank through a guided digital onboarding experience.",
+    "A governed client onboarding and service activation platform, configured per industry.",
 };
 
 export default function RootLayout({
