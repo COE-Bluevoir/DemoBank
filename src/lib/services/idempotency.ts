@@ -122,7 +122,8 @@ async function readDynamoRecord(
   const response = await getDynamoClient().send(
     new GetCommand({
       TableName: tableName,
-      Key: { pk: `IDEMPOTENCY#${scopedKey}` },
+      // Constant sort key: the table is keyed pk+sk for the ledger's benefit.
+      Key: { pk: `IDEMPOTENCY#${scopedKey}`, sk: "RECORD" },
       // A retry must observe the original result, never a stale miss.
       ConsistentRead: true,
     }),
@@ -147,6 +148,7 @@ async function writeDynamoRecord(
       TableName: requireAwsConfig().tableName,
       Item: {
         pk: `IDEMPOTENCY#${scopedKey}`,
+        sk: "RECORD",
         requestFingerprint: record.requestFingerprint,
         result: record.result,
         ttl: Math.floor((Date.now() + TTL_MS) / 1000),

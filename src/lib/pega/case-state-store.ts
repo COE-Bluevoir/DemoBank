@@ -64,7 +64,9 @@ export class InMemoryPegaCaseStateStore implements PegaCaseStateStore {
  */
 export class DynamoPegaCaseStateStore implements PegaCaseStateStore {
   private key(caseId: string) {
-    return { pk: `PEGA_CASE_STATE#${caseId}` };
+    // The table is keyed pk+sk so the ledger can order records by timestamp.
+    // Single-record items use a constant sort key.
+    return { pk: `PEGA_CASE_STATE#${caseId}`, sk: "STATE" };
   }
 
   async get(caseId: string): Promise<PegaCaseState | undefined> {
@@ -113,7 +115,7 @@ export async function deleteCaseState(caseId: string): Promise<void> {
   await getDynamoClient().send(
     new DeleteCommand({
       TableName: requireAwsConfig().tableName,
-      Key: { pk: `PEGA_CASE_STATE#${caseId}` },
+      Key: { pk: `PEGA_CASE_STATE#${caseId}`, sk: "STATE" },
     }),
   );
 }

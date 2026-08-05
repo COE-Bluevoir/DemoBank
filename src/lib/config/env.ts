@@ -222,8 +222,10 @@ function loadConfig(source: EnvSource): ServerConfig {
   // half-configured AWS driver must fail at startup rather than lose a
   // customer's application mid-journey.
   if (env.STORAGE_DRIVER === "aws") {
+    // The region is supplied by the Lambda runtime and cannot be set as a
+    // build variable, so only the resource names are genuinely required.
     const missing = (
-      ["AWS_REGION", "DYNAMODB_TABLE_NAME", "S3_DOCUMENT_BUCKET"] as const
+      ["DYNAMODB_TABLE_NAME", "S3_DOCUMENT_BUCKET"] as const
     ).filter((key) => !env[key]);
 
     if (missing.length > 0) {
@@ -251,7 +253,7 @@ function loadConfig(source: EnvSource): ServerConfig {
     aws:
       env.STORAGE_DRIVER === "aws"
         ? {
-            region: env.AWS_REGION!,
+            region: env.AWS_REGION ?? env.BEDROCK_REGION ?? "us-east-1",
             tableName: env.DYNAMODB_TABLE_NAME!,
             documentBucket: env.S3_DOCUMENT_BUCKET!,
           }
