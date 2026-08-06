@@ -8,6 +8,23 @@ frontend:
         - npm ci --include=dev
     build:
       commands:
+        # Amplify exposes app environment variables to the build container but
+        # not to the SSR compute runtime. Writing them to .env.production is
+        # what carries them through to the running server.
+        #
+        # AWS_REGION is deliberately excluded: it is reserved and supplied by
+        # the Lambda runtime.
+        - |
+          for key in ORCHESTRATION_MODE DEMO_SCENARIO DEMO_CONTROL_ENABLED DEMO_CONTROL_PASSCODE \
+                     STORAGE_DRIVER DYNAMODB_TABLE_NAME S3_DOCUMENT_BUCKET DOCUMENT_STORAGE_DIR \
+                     AGENT_PROVIDER BEDROCK_REGION BEDROCK_MODEL_ID BEDROCK_REASONING_MODEL_ID \
+                     PEGA_BASE_URL PEGA_TOKEN_URL PEGA_CLIENT_ID PEGA_CLIENT_SECRET \
+                     PEGA_CASE_TYPE_ID PEGA_TIMEOUT_MS PEGA_MAX_RETRIES SERVICE_API_KEY; do
+            if [ -n "${!key}" ]; then
+              printf '%s=%s\n' "$key" "${!key}" >> .env.production
+            fi
+          done
+        - echo "carried $(wc -l < .env.production 2>/dev/null || echo 0) settings into the runtime"
         - npm run lint
         - npx tsc --noEmit
         - npm run test:unit -- --run
