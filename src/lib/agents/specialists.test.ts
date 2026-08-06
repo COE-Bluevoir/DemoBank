@@ -84,12 +84,12 @@ describe("tool invoker", () => {
     const first = await invoker.invoke({
       tool: "create-customer",
       input,
-      idempotencyKey: "key-1",
+      idempotencyKey: "specialists-create-customer",
     });
     const second = await invoker.invoke({
       tool: "create-customer",
       input,
-      idempotencyKey: "key-1",
+      idempotencyKey: "specialists-create-customer",
     });
 
     expect(first.replayed).toBe(false);

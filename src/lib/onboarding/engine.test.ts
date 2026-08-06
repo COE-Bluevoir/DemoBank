@@ -16,7 +16,11 @@ import {
   submitCaseAction,
   updateMode,
 } from "@/lib/onboarding/engine";
-import { ConfigurationError } from "@/lib/config/env";
+import {
+  ConfigurationError,
+  loadServerConfigFrom,
+  requirePegaConfigFrom,
+} from "@/lib/config/env";
 import { PegaIntegrationError, type PegaFailureKind } from "@/lib/pega/errors";
 import { applicantSchema } from "@/lib/onboarding/schemas";
 import { getAdapter } from "@/lib/onboarding/adapters";
@@ -158,9 +162,15 @@ describe("onboarding engine", () => {
   });
 
   it("refuses to build a Pega adapter when the connection is unconfigured", () => {
-    // Falling back to the mock here would make a broken integration look
-    // healthy, so an unconfigured environment must fail loudly instead.
-    expect(() => getAdapter("pega")).toThrow(/not configured/i);
+    // Asserted against an explicitly empty configuration: a build environment
+    // with real Pega credentials would otherwise make this pass vacuously.
+    const unconfigured = loadServerConfigFrom({ ORCHESTRATION_MODE: "mock-pega" });
+
+    expect(unconfigured.pega).toBeUndefined();
+    expect(unconfigured.pegaConfigurationIssues[0]).toMatch(/PEGA_/);
+
+    // Falling back to the mock would make a broken integration look healthy.
+    expect(() => requirePegaConfigFrom(unconfigured)).toThrow(/not configured/i);
   });
 
   it("validates demo-control cookies", () => {

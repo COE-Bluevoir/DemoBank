@@ -50,3 +50,7 @@ yarn-error.log*
 
 # local agent harness settings
 /.claude/
+
+# amplify manual deployment artefacts
+/.amplify-hosting
+/amplify-bundle.zip

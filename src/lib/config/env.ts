@@ -284,8 +284,13 @@ export function resetServerConfigCache(): void {
 }
 
 export function requirePegaConfig(): PegaConnectionConfig {
-  const config = getServerConfig();
+  return requirePegaConfigFrom(getServerConfig());
+}
 
+/** Pure form, so the guard can be asserted without depending on process.env. */
+export function requirePegaConfigFrom(
+  config: ServerConfig,
+): PegaConnectionConfig {
   if (!config.pega) {
     throw new ConfigurationError(
       `The Pega connection is not configured. ${config.pegaConfigurationIssues.join(" ")}`,
