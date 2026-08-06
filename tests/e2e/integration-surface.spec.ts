@@ -218,6 +218,11 @@ test.describe("document handling", () => {
         productCode: "EVERYDAY_PLUS",
         channel: "WEB",
         scenarioId: "HAPPY_PATH",
+        // Stated rather than inherited: these tests are about this
+        // application's own document surface, and picking up whichever
+        // orchestration ran last makes them pass or fail for unrelated
+        // reasons.
+        orchestrationMode: "mock-pega",
       },
     });
     const { caseId } = await created.json();
@@ -248,6 +253,11 @@ test.describe("document handling", () => {
         productCode: "EVERYDAY_PLUS",
         channel: "WEB",
         scenarioId: "HAPPY_PATH",
+        // Stated rather than inherited: these tests are about this
+        // application's own document surface, and picking up whichever
+        // orchestration ran last makes them pass or fail for unrelated
+        // reasons.
+        orchestrationMode: "mock-pega",
       },
     });
     const { caseId } = await created.json();
@@ -299,5 +309,38 @@ test.describe("document handling", () => {
     );
 
     expect(response.status()).toBe(404);
+  });
+});
+
+test.describe("review gate", () => {
+  test("a customer cannot clear the review holding their own case", async ({
+    request,
+  }) => {
+    // The reviewer route and the customer route reach the same adapter, so
+    // this is the assertion that keeps the human-review gate real rather than
+    // decorative.
+    const created = await request.post("/api/onboarding/cases", {
+      data: {
+        productCode: "EVERYDAY_PLUS",
+        channel: "WEB",
+        scenarioId: "ADDRESS_PEP_REVIEW",
+        industryId: "banking",
+        orchestrationMode: "non-pega",
+      },
+    });
+
+    expect(created.ok()).toBe(true);
+    const { caseId, caseVersion } = await created.json();
+
+    const attempt = await request.post(
+      `/api/onboarding/cases/${encodeURIComponent(caseId)}/actions`,
+      { data: { actionId: "CLEAR_REVIEW", expectedCaseVersion: caseVersion } },
+    );
+
+    expect(attempt.status()).toBe(403);
+
+    // And the refusal must not describe the control it is protecting.
+    const body = await attempt.json();
+    expect(body.message).not.toMatch(/review|reviewer|gate/i);
   });
 });
