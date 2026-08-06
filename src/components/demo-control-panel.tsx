@@ -180,7 +180,10 @@ export function DemoControlPanel({
         {caseData ? (
           <>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <CaseReferenceBadge label="Case ID" value={caseData.caseId} />
+              <CaseReferenceBadge
+                label="Case ID"
+                value={caseData.displayReference ?? caseData.caseId}
+              />
               <CaseReferenceBadge
                 label="Case version"
                 value={String(caseData.caseVersion)}

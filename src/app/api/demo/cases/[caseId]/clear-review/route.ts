@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getAdapterForCase } from "@/lib/onboarding/adapters";
 import {
   getDemoControlEnabled,
   isDemoAuthorizedCookie,
 } from "@/lib/onboarding/demo-auth";
-import { clearReview, fetchCaseEvents, serializeError } from "@/lib/onboarding/engine";
+import { serializeError } from "@/lib/onboarding/engine";
 
+/**
+ * A reviewer clears a case that policy held for human attention.
+ *
+ * Routed through the adapter so it works whichever orchestration owns the
+ * case: every one of them holds cases for review, and the operations surface
+ * should not have to know which is running.
+ */
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ caseId: string }> },
@@ -20,10 +28,16 @@ export async function POST(
 
   try {
     const { caseId } = await context.params;
-    const caseView = clearReview(caseId);
+    const adapter = getAdapterForCase(caseId);
+
+    const caseView = await adapter.submitAction(caseId, {
+      actionId: "CLEAR_REVIEW",
+      expectedCaseVersion: (await adapter.getCase(caseId)).caseVersion,
+    });
+
     return NextResponse.json({
       caseView,
-      events: fetchCaseEvents(caseId),
+      events: await adapter.getEvents(caseId),
     });
   } catch (error) {
     const serialized = serializeError(error);

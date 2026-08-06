@@ -1,6 +1,35 @@
 # NorthStar Bank Onboarding POC
 
-Independent fictional retail-banking website for the NorthStar Bank Everyday Plus account onboarding demonstration. The frontend is the experience layer only and communicates exclusively through a backend-for-frontend API with an adapter-based orchestration layer.
+Independent fictional retail-banking website for the NorthStar Bank Everyday
+Plus account onboarding demonstration. The frontend is the experience layer only
+and communicates exclusively through a backend-for-frontend API with an
+adapter-based orchestration layer.
+
+## The switch
+
+The customer chooses which system runs their application, on the start page,
+before it opens — **Pega** or **AWS**. These are two complete, mutually
+exclusive implementations of the same journey; neither borrows from the other,
+which is what makes comparing them meaningful.
+
+The choice binds to the case rather than to a shared setting: each
+orchestration mints its own reference (`NPG-…` for AWS, Pega's own work ID for
+Pega) and ownership is read back off it, so a switch flipped mid-journey cannot
+divert an application to a system that never opened it.
+
+| | Pega | AWS |
+|---|---|---|
+| Runs the workflow | Pega, entirely | AWS, entirely |
+| Case state, policy, exceptions, review, activation | Pega | outside Pega |
+| Pega called | yes | **never** |
+| Status | **this side complete, waiting on Pega's own stages** | **complete end to end** |
+
+The AWS path runs to an opened account with no dependency on Pega. The Pega
+path opens a real case and Pega accepts details, consent and documents; its own
+document and agent stages are still being configured, and when one fails the
+customer sees a neutral message. No change here is needed when Pega is fixed.
+
+See [docs/solution-overview.md](./docs/solution-overview.md).
 
 ## Stack
 

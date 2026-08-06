@@ -252,12 +252,25 @@ function buildCurrentAction(
   };
 }
 
-function mapDocuments(caseInfo: DxCaseInfo): DocumentView[] | undefined {
-  const documents = caseInfo.content?.Documents;
+/**
+ * Documents Pega holds against the case.
+ *
+ * Pega records these in a `Document` page list, keyed by its own vocabulary:
+ * a document name and a `DocumentType` drawn from its dropdown. It does not
+ * store the website's IDENTITY/ADDRESS distinction, so that is recovered from
+ * what the website itself captured rather than guessed from the type.
+ */
+function mapDocuments(
+  caseInfo: DxCaseInfo,
+  collected: Record<string, unknown> | undefined,
+): DocumentView[] | undefined {
+  const documents = caseInfo.content?.Document;
 
-  if (!Array.isArray(documents)) {
-    return undefined;
+  if (!Array.isArray(documents) || documents.length === 0) {
+    return collectedDocuments(collected);
   }
+
+  const uploaded = collectedDocuments(collected) ?? [];
 
   return documents.flatMap((entry): DocumentView[] => {
     if (!entry || typeof entry !== "object") {
@@ -265,22 +278,45 @@ function mapDocuments(caseInfo: DxCaseInfo): DocumentView[] | undefined {
     }
 
     const record = entry as Record<string, unknown>;
-    const kind = record.Kind === "ADDRESS" ? "ADDRESS" : "IDENTITY";
+    const fileName = String(record.DocumentName ?? "");
+    const known = uploaded.find((item) => item.fileName === fileName);
 
     return [
       {
-        documentId: String(record.DocumentID ?? record.pyGUID ?? ""),
-        kind,
-        fileName: String(record.FileName ?? ""),
-        fileType: String(record.FileType ?? ""),
-        fileSize: Number(record.FileSize ?? 0),
+        documentId: String(record.pyGUID ?? fileName),
+        kind: known?.kind ?? "IDENTITY",
+        fileName,
+        fileType: known?.fileType ?? "application/pdf",
+        fileSize: known?.fileSize ?? 0,
         status: "UPLOADED",
-        source: "upload",
-        evidenceReference: String(record.EvidenceReference ?? ""),
-        storageReference: contentString(record, "StorageReference"),
+        source: known?.source ?? "upload",
+        evidenceReference: known?.evidenceReference ?? "",
+        storageReference: known?.storageReference,
       },
     ];
   });
+}
+
+/**
+ * Documents the website has uploaded this session.
+ *
+ * Pega's case content lags the upload — the file is attached to the flow
+ * action before it appears in the case's `Document` list — so without this the
+ * customer would upload a file and see no acknowledgement that it arrived.
+ */
+function collectedDocuments(
+  collected: Record<string, unknown> | undefined,
+): DocumentView[] | undefined {
+  const documents = collected?.documents;
+
+  if (!Array.isArray(documents) || documents.length === 0) {
+    return undefined;
+  }
+
+  return documents.filter(
+    (entry): entry is DocumentView =>
+      typeof entry === "object" && entry !== null && "fileName" in entry,
+  );
 }
 
 /**
@@ -406,6 +442,8 @@ export function mapDxCaseToView(
 
   return {
     caseId: caseInfo.ID,
+    // Pega's own business ID, which is what its users quote to each other.
+    displayReference: caseInfo.businessID ?? caseInfo.ID,
     caseVersion: context.caseVersion,
     correlationId: context.correlationId,
     orchestrationMode: "pega",
@@ -416,7 +454,7 @@ export function mapDxCaseToView(
     currentAction: buildCurrentAction(caseInfo, status),
     progress: buildProgress(status),
     applicant: mapApplicant(caseInfo) ?? collectedApplicant(context.collected),
-    documents: mapDocuments(caseInfo),
+    documents: mapDocuments(caseInfo, context.collected),
     // Pega drives the journey; conversational messages are a mock-mode concept
     // and are intentionally not synthesised from case data.
     assistantMessages: [],

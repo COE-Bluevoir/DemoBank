@@ -65,18 +65,20 @@ export const MODE_OPTIONS: Array<{
   {
     id: "mock-pega",
     label: "Mock Pega",
-    description: "Deterministic mock orchestration aligned to the Pega path.",
+    description:
+      "Deterministic stand-in for the Pega path. Runs locally with no external dependency.",
   },
   {
     id: "pega",
-    label: "Pega placeholder",
-    description: "Future real adapter surface; currently delegates to the mock engine.",
+    label: "Pega",
+    description:
+      "Pega runs the entire workflow: case state, rules, exceptions, review and activation.",
   },
   {
     id: "non-pega",
-    label: "Non-Pega placeholder",
+    label: "AWS",
     description:
-      "Future comparison adapter surface; currently delegates to the mock engine.",
+      "AWS runs the entire workflow: agents interpret, a policy engine decides, and Pega is never called.",
   },
 ];
 

@@ -11,6 +11,7 @@ import type {
   CreateOnboardingCaseResponse,
   DemoExecutionEvent,
   DocumentUploadResponse,
+  DocumentView,
   OnboardingCaseView,
   OnboardingOrchestrationAdapter,
   SubmitCaseActionRequest,
@@ -33,6 +34,43 @@ import {
 } from "@/lib/pega/dx-schemas";
 import { PegaIntegrationError } from "@/lib/pega/errors";
 import { PegaHttpClient } from "@/lib/pega/http-client";
+import {
+  SAMPLE_DOCUMENT_FILE_NAMES,
+  sampleDocumentPdf,
+} from "@/lib/pega/sample-documents";
+
+/**
+ * Add a document to the recorded list, replacing any earlier one of the same
+ * kind — re-uploading an identity document supersedes it rather than leaving
+ * the customer looking at two.
+ */
+function recordUploadedDocument(
+  existing: unknown,
+  document: DocumentView,
+): DocumentView[] {
+  const current = Array.isArray(existing) ? (existing as DocumentView[]) : [];
+
+  return [...current.filter((item) => item.kind !== document.kind), document];
+}
+
+/**
+ * Find the property a flow action's attachment control writes to.
+ *
+ * Pega marks it in the view metadata as `@ATTACHMENT .SomeProperty`. Reading
+ * it is necessary rather than tidy: the identity and address steps of the same
+ * case type use different properties, so a hardcoded name works for one and is
+ * rejected by the other.
+ *
+ * Returns the bare property name — Pega rejects the leading dot on submit even
+ * though its own metadata includes it.
+ */
+export function attachmentFieldFrom(uiResources: unknown): string | undefined {
+  const marker = /"@ATTACHMENT\s+\.?([A-Za-z0-9_]+)"/.exec(
+    JSON.stringify(uiResources ?? {}),
+  );
+
+  return marker?.[1];
+}
 
 /**
  * Live Pega orchestration adapter, speaking the Pega DX API v2.
@@ -440,7 +478,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       });
     }
 
-    const attachmentId = await this.attachToCase(caseId, {
+    const attachmentId = await this.uploadAttachment(caseId, {
       fileName: document.fileName,
       contentType: document.fileType,
       content: stored.content,
@@ -450,11 +488,31 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     // upload gate for the assignment waiting on one.
     const uploadState = await loadState(caseId);
     uploadState.collected.documentsProvided = true;
+    // Pega's case content does not carry the file until later in its own
+    // flow, so what the customer uploaded is recorded here — otherwise they
+    // upload a document and the page shows nothing back.
+    uploadState.collected.documents = recordUploadedDocument(
+      uploadState.collected.documents,
+      {
+        documentId: attachmentId,
+        kind: document.kind,
+        fileName: document.fileName,
+        fileType: document.fileType,
+        fileSize: document.fileSize,
+        status: "UPLOADED",
+        source: document.source === "demo" ? "demo" : "upload",
+        evidenceReference: attachmentId,
+        storageReference: document.storageReference,
+      },
+    );
     await saveState(caseId, uploadState);
 
     // Advancing the open assignment is what moves the case on from "waiting
     // for a document"; the attachment alone does not.
-    await this.advanceDocumentAssignment(caseId, document);
+    await this.advanceDocumentAssignment(caseId, document, {
+      attachmentId,
+      fileName: document.fileName,
+    });
 
     return {
       documentId: attachmentId,
@@ -473,35 +531,82 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   private async attachSampleDocuments(
     caseId: string,
   ): Promise<OnboardingCaseView> {
-    const samples: Array<{ kind: UploadedDocument["kind"]; fileName: string }> = [
-      { kind: "IDENTITY", fileName: "Sample_Identity_Document.pdf" },
-      { kind: "ADDRESS", fileName: "Sample_Proof_Of_Address.pdf" },
-    ];
+    const kinds: Array<UploadedDocument["kind"]> = ["IDENTITY", "ADDRESS"];
 
-    for (const sample of samples) {
-      await this.attachToCase(caseId, {
-        fileName: sample.fileName,
+    for (const kind of kinds) {
+      const content = sampleDocumentPdf(kind);
+      const fileName = SAMPLE_DOCUMENT_FILE_NAMES[kind];
+
+      const attachmentId = await this.uploadAttachment(caseId, {
+        fileName,
         contentType: "application/pdf",
-        content: samplePdf(sample.fileName),
+        content,
       });
 
-      await this.advanceDocumentAssignment(caseId, {
-        kind: sample.kind,
-        fileName: sample.fileName,
-        fileType: "application/pdf",
-        fileSize: samplePdf(sample.fileName).byteLength,
-        source: "demo",
-      });
+      // Recorded for the same reason as a customer upload: so the page can
+      // show what was attached before Pega's own content catches up.
+      const sampleState = await loadState(caseId);
+      sampleState.collected.documents = recordUploadedDocument(
+        sampleState.collected.documents,
+        {
+          documentId: attachmentId,
+          kind,
+          fileName,
+          fileType: "application/pdf",
+          fileSize: content.byteLength,
+          status: "UPLOADED",
+          source: "demo",
+          evidenceReference: attachmentId,
+        },
+      );
+      await saveState(caseId, sampleState);
+
+      await this.advanceDocumentAssignment(
+        caseId,
+        {
+          kind,
+          fileName,
+          fileType: "application/pdf",
+          fileSize: content.byteLength,
+          source: "demo",
+        },
+        { attachmentId, fileName },
+      );
     }
 
     return this.getCase(caseId);
   }
 
   /**
-   * Upload a file to Pega and link it to the case.
+   * Upload a file to Pega's attachment store.
    *
-   * Two calls, because Pega separates storing the bytes from associating them
-   * with a case. Returns the case-scoped attachment link ID.
+   * Returns the upload's ID, which the flow action then cites to attach it to
+   * the case. Uploading does not by itself associate the file with anything.
+   */
+  private async uploadAttachment(
+    caseId: string,
+    file: { fileName: string; contentType: string; content: Uint8Array },
+  ): Promise<string> {
+    const state = await loadState(caseId);
+
+    const uploaded = await this.client.uploadFile({
+      path: "/attachments/upload",
+      fileName: file.fileName,
+      contentType: file.contentType,
+      content: file.content,
+      correlationId: state.correlationId,
+      schema: dxAttachmentUploadSchema,
+    });
+
+    return uploaded.ID;
+  }
+
+  /**
+   * Upload a file to Pega and link it directly to the case.
+   *
+   * Used when no flow action is waiting to receive the file; the document
+   * steps attach through the action instead, so the case records which step
+   * the evidence answered.
    */
   private async attachToCase(
     caseId: string,
@@ -547,6 +652,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   private async advanceDocumentAssignment(
     caseId: string,
     document: UploadedDocument,
+    attachment?: { attachmentId: string; fileName: string },
   ): Promise<void> {
     const { caseInfo, state } = await this.readCase(caseId);
     const assignment = primaryAssignment(caseInfo);
@@ -558,6 +664,18 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
 
     const view = await this.readAssignmentAction(assignment.ID, flowActionId);
 
+    // Submitting the file without citing it produces "attachment content is
+    // empty" from Pega, which reads like a corrupt upload rather than a view
+    // we could not read. Fail with the real reason instead.
+    if (attachment && !view.attachmentField) {
+      throw new PegaIntegrationError("CONTRACT", {
+        technicalDetail:
+          `Flow action ${flowActionId} on case ${caseId} declares no attachment ` +
+          "field, so the uploaded document cannot be cited on submit.",
+        correlationId: state.correlationId,
+      });
+    }
+
     const { data, eTag } = await this.client.requestWithMeta({
       method: "PATCH",
       path: `/assignments/${encodeURIComponent(assignment.ID)}/actions/${encodeURIComponent(flowActionId)}`,
@@ -565,6 +683,22 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       correlationId: state.correlationId,
       eTag: view.eTag ?? state.eTag,
       body: {
+        // The upload steps validate that a file reached the action itself, so
+        // citing the attachment here is what satisfies them; an attachment
+        // linked only to the case leaves the action reporting no content.
+        ...(attachment && view.attachmentField
+          ? {
+              attachments: [
+                {
+                  type: "File",
+                  category: "File",
+                  ID: attachment.attachmentId,
+                  name: attachment.fileName,
+                  attachmentFieldName: view.attachmentField,
+                },
+              ],
+            }
+          : {}),
         content: restrictToAcceptedFields(
           {
             ...toPegaContent(state.collected, {
@@ -635,6 +769,10 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   private async readAssignmentAction(assignmentId: string, actionId: string) {
     const { data, eTag } = await this.client.requestWithMeta({
       method: "GET",
+      // The form view is what carries the field metadata. Without asking for
+      // it Pega may answer with content alone, and the attachment control's
+      // target property — which differs per action — cannot be discovered.
+      query: { viewType: "form" },
       path: `/assignments/${encodeURIComponent(assignmentId)}/actions/${encodeURIComponent(actionId)}`,
       schema: dxCaseResponseSchema,
     });
@@ -644,6 +782,11 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
 
     return {
       eTag,
+      // Which property this action's attachment control writes to, read from
+      // the action rather than assumed: the identity step collects a list in
+      // `UploadDocs` while the address step takes a single `AttachDoc`, and
+      // citing the wrong one is rejected as invalid attachment details.
+      attachmentField: attachmentFieldFrom(data.uiResources),
       // Top-level properties this action will accept.
       acceptedFields: new Set(
         Object.keys(data.data.caseInfo.content ?? {}).filter(notReserved),
@@ -673,24 +816,6 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   }
 }
 
-/**
- * Build a minimal, valid PDF for the sample-document path.
- *
- * Generated rather than shipped as a binary so the bytes are inspectable and
- * the file is unmistakably test data.
- */
-function samplePdf(title: string): Uint8Array {
-  const body = [
-    "%PDF-1.7",
-    "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj",
-    "2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj",
-    `% ${title} - fictional sample document for demonstration only`,
-    "trailer<</Root 1 0 R>>",
-    "%%EOF",
-  ].join("\n");
-
-  return new TextEncoder().encode(body);
-}
 
 /**
  * Flow actions the website must never auto-submit on the customer's behalf.

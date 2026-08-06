@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getServerConfig } from "@/lib/config/env";
+import { getDemoSettings } from "@/lib/onboarding/engine";
 import { PegaTokenProvider } from "@/lib/pega/token-provider";
 import { PegaIntegrationError } from "@/lib/pega/errors";
 import { listTools } from "@/lib/services/registry";
@@ -17,6 +18,8 @@ import { listTools } from "@/lib/services/registry";
 export async function GET(request: Request) {
   const config = getServerConfig();
   const deep = new URL(request.url).searchParams.get("deep") === "true";
+  // Demo control persists a mode that overrides the configured default.
+  const effectiveMode = getDemoSettings().orchestrationMode;
 
   const pegaStatus: {
     configured: boolean;
@@ -46,13 +49,17 @@ export async function GET(request: Request) {
   }
 
   const healthy =
-    config.orchestrationMode !== "pega" ||
+    effectiveMode !== "pega" ||
     (pegaStatus.configured && pegaStatus.reachable !== false);
 
   return NextResponse.json(
     {
       status: healthy ? "ok" : "degraded",
-      orchestrationMode: config.orchestrationMode,
+      // The mode actually serving traffic. Demo control can switch it at
+      // runtime, so reporting the configured value would tell an operator the
+      // wrong thing about what their customers are hitting.
+      orchestrationMode: effectiveMode,
+      configuredOrchestrationMode: config.orchestrationMode,
       pega: pegaStatus,
       services: {
         authenticationRequired: Boolean(config.serviceApiKey),

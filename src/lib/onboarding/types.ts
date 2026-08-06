@@ -117,6 +117,15 @@ export interface CustomerAlert {
 
 export interface OnboardingCaseView {
   caseId: string;
+  /**
+   * The reference shown to the customer.
+   *
+   * Pega's case ID embeds its internal work class
+   * (`ODHMNT-AGENTICC-WORK C-195034`), which is meaningless to a customer and
+   * exposes the implementation. Pega supplies a business ID for this purpose;
+   * where an orchestration has no such distinction this is just the case ID.
+   */
+  displayReference?: string;
   caseVersion: number;
   correlationId: string;
   orchestrationMode: OrchestrationMode;

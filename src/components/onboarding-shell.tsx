@@ -1,9 +1,19 @@
 import type { ReactNode } from "react";
 
-import type { OnboardingCaseView } from "@/lib/onboarding/types";
+import type {
+  OnboardingCaseView,
+  OrchestrationMode,
+} from "@/lib/onboarding/types";
 import { CaseReferenceBadge } from "@/components/case-reference-badge";
 import { JourneyProgress } from "@/components/journey-progress";
 import { Card } from "@/components/ui";
+
+/** Customer-facing name for each orchestration. */
+const ORCHESTRATION_LABEL: Record<OrchestrationMode, string> = {
+  "mock-pega": "Mock Pega",
+  pega: "Pega",
+  "non-pega": "AWS",
+};
 
 export function OnboardingShell({
   caseData,
@@ -31,10 +41,19 @@ export function OnboardingShell({
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <CaseReferenceBadge label="Case ID" value={caseData.caseId} />
+            <CaseReferenceBadge
+              label="Case ID"
+              value={caseData.displayReference ?? caseData.caseId}
+            />
             <CaseReferenceBadge
               label="Status"
               value={caseData.customerSafeStatus}
+            />
+            {/* Which system is running this application. Shown because the
+                whole point of the switch is being able to tell them apart. */}
+            <CaseReferenceBadge
+              label="Running on"
+              value={ORCHESTRATION_LABEL[caseData.orchestrationMode]}
             />
           </div>
         </div>

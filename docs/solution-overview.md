@@ -11,73 +11,89 @@ adapted to each industry by configuration. AI interprets; the workflow governs.
 
 ## 1. The switch
 
-`ORCHESTRATION_MODE` selects which system runs the business workflow. The two
-production modes are **complete and mutually exclusive** implementations of the
-same journey — neither borrows from the other, which is what makes comparing
-them meaningful.
+The customer chooses which system runs their application, on the start page,
+before it opens:
 
-| | `pega` | `non-pega` |
+```
+   Run this application on
+   ( ) Pega    Pega runs the entire workflow: case state, rules,
+               exceptions, review and activation.
+   (o) AWS     AWS runs the entire workflow: agents interpret, a policy
+               engine decides, and Pega is never called.
+```
+
+The two are **complete and mutually exclusive** implementations of the same
+journey — neither borrows from the other, which is what makes comparing them
+meaningful.
+
+| | `pega` | `non-pega` (AWS) |
 |---|---|---|
-| Orchestration authority | Pega, entirely | AWS/Bedrock, entirely |
+| Orchestration authority | Pega, entirely | AWS, entirely |
 | This application's role | experience and API adapter only | experience and API adapter only |
 | Case state | Pega | DynamoDB (S3 for evidence) |
 | Policy and rules | Pega | `src/lib/orchestration/policy.ts` |
 | Exceptions | Pega | own exception records |
 | Human-review gating | Pega assignments | own review gate |
-| Tool execution | Pega | tool invoker |
 | Activation | Pega | `create-customer`, idempotent |
 | Bedrock in the workflow | **none** | all interpretation |
 | Pega called | yes | **never** |
 
-`mock-pega` is a third, local-only mode: a deterministic stand-in for the Pega
-path so the journey runs with no external dependencies.
+**The choice binds to the case, not to a shared setting.** Each orchestration
+mints its own reference — `NPG-…` for AWS, Pega's own work ID for Pega — and
+`resolveCaseMode` reads ownership back off it. A switch flipped mid-journey, by
+this visitor or another, cannot divert an application to a system that has
+never heard of it. The journey header shows which system is running the case.
+
+`mock-pega` is a third, local-only mode: a deterministic stand-in so the
+journey runs with no external dependency. It is offered in the switch only when
+deliberately selected, so the switch never claims something else is running.
+
+An option this environment cannot serve is shown with the reason rather than
+hidden — a missing credential should be legible, not invisible.
+
+## 1a. Status of each path
+
+**AWS — complete.** Runs to an opened account every time, with no dependency on
+Pega. Verified end to end through the browser
+(`tests/e2e/aws-journey.spec.ts`):
 
 ```
-  /accelerator  ── choose industry ──▶  /banking · /insurance · /telecom
-                                              │
-                                     industry pack supplies
-                                     branding · vocabulary ·
-                                     intake fields · evidence
-                                              │
-                                    ┌─────────▼─────────┐
-                                    │  Onboarding BFF   │  normalized case model
-                                    └─────────┬─────────┘
-                    ORCHESTRATION_MODE selects exactly one:
-              ┌───────────────┬───────────────┬───────────────┐
-        ┌─────▼─────┐   ┌─────▼─────┐   ┌─────▼─────┐
-        │ mock-pega │   │   pega    │   │ non-pega  │
-        │  (local)  │   │ DX API v2 │   │  Bedrock  │
-        └───────────┘   └───────────┘   └───────────┘
-                          Pega owns      agents + policy
-                          everything     engine own
-                                         everything
-```
-
-Routes, UI and the normalized case model are identical in every mode: they all
-satisfy `OnboardingOrchestrationAdapter`.
-
-### Verified non-Pega journey
-
-A complete case with no Pega involvement, showing who decided what:
-
-```
-CASE        Case created          opened outside the governed workflow
+CASE        Case created          opened on the AWS orchestration
 CASE        Details captured      applicant details recorded
 HUMAN       Consent captured      customer accepted the consent statement
 AGENT       document              1 discrepancy(ies) found
 AGENT       screening             one or more checks require human review
 RULE        Policy evaluated      MANUAL_REVIEW_REQUIRED
-HUMAN       Review cleared        reviewer ops.reviewer cleared the case
+HUMAN       Review cleared        reviewer cleared the case
 INTEGRATION Customer created      account opened
 
 exceptions : DOCUMENT_DISCREPANCY/CORRECTABLE, SCREENING_SCREEN_PEP/MATERIAL
-screening  : sanctions=CLEAR pep=POTENTIAL_MATCH duplicate=CLEAR bureau=PASSED
-outcome    : CUST-647389 / ACC-831033
+outcome    : CUST-262801 / ACC-550780
 ```
 
-Agents produced the evidence; the deterministic policy engine decided what it
-meant; the review gate held the case until a person cleared it. That division
-is the same one Pega enforces — implemented outside it.
+Agents produced the evidence; a deterministic policy engine decided what it
+meant; the review gate held the case until a person cleared it.
+
+**Pega — this side is complete and waiting.** Against the live instance, the
+application opens a real case and Pega accepts the details, the consent and the
+uploaded documents. Pega's own document and agent stages are still being
+configured on their side; when a step fails there, the customer sees a neutral
+"Action not completed" message rather than an error. No change to this
+application is needed when Pega is fixed — the same deployed frontend will
+simply carry on into the later stages.
+
+What this side had to get right, and now does:
+
+- The attachment is cited **on the flow action**, not merely linked to the
+  case. Pega's identity and address steps write to *different* properties
+  (`UploadDocs` and `AttachDoc`), so the target is read from the action's own
+  view rather than hardcoded — and the leading dot Pega's metadata includes
+  must be stripped on submit.
+- Uploaded files are genuinely well-formed PDFs. Pega parses them, and a stub
+  that only satisfies magic-byte validation is rejected with a generic
+  "invalid input parameters" that reads like an integration fault.
+- The customer sees Pega's business ID (`C-195036`), never its work-class ID
+  (`ODHMNT-AGENTICC-WORK C-195036`).
 
 ## 2. Industry packs
 

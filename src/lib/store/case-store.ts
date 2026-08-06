@@ -40,7 +40,14 @@ export class FileCaseStore implements CaseStore {
 
   write(snapshot: DemoSnapshot): void {
     this.ensure();
-    fs.writeFileSync(this.filePath, JSON.stringify(snapshot, null, 2));
+
+    // Write then rename. A plain write is not atomic, and this file is read by
+    // request handlers running concurrently with the one writing it — a reader
+    // that arrives mid-write gets truncated JSON.
+    const temporary = `${this.filePath}.${process.pid}.tmp`;
+
+    fs.writeFileSync(temporary, JSON.stringify(snapshot, null, 2));
+    fs.renameSync(temporary, this.filePath);
   }
 
   clear(): void {

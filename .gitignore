@@ -54,3 +54,7 @@ yarn-error.log*
 # amplify manual deployment artefacts
 /.amplify-hosting
 /amplify-bundle.zip
+
+# Scratch files written by verification scripts. One of these held a service
+# API key, so they are excluded rather than tidied up by hand each time.
+*.tmp

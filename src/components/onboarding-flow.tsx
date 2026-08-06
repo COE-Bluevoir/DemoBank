@@ -407,7 +407,10 @@ export function OnboardingFlow({
                 </div>
               </div>
               <div className="grid gap-3">
-                <CaseReferenceBadge label="Case ID" value={caseData.caseId} />
+                <CaseReferenceBadge
+                  label="Case ID"
+                  value={caseData.displayReference ?? caseData.caseId}
+                />
                 <CaseReferenceBadge
                   label="Version"
                   value={String(caseData.caseVersion)}

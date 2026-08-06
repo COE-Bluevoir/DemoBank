@@ -40,6 +40,14 @@ export const createCaseSchema = z.object({
   channel: z.literal("WEB"),
   scenarioId: z.enum(["ADDRESS_PEP_REVIEW", "HAPPY_PATH", "SERVICE_TIMEOUT"]),
   industryId: z.enum(["banking", "insurance", "telecom"]).default("banking"),
+  /**
+   * Which orchestration should run this application.
+   *
+   * Carried on the request that opens the case so the customer's choice binds
+   * to their application, rather than depending on a shared setting that
+   * another visitor could change underneath them.
+   */
+  orchestrationMode: z.enum(["mock-pega", "pega", "non-pega"]).optional(),
 });
 
 export const submitActionSchema = z.object({

@@ -197,7 +197,9 @@ export class NonPegaOrchestrationAdapter
       category: "CASE",
       displayName: "Case created",
       status: "SUCCEEDED",
-      summary: "Onboarding case opened outside the governed workflow.",
+      // "Outside Pega" rather than "ungoverned": this orchestration applies
+      // its own policy, exceptions and review gate.
+      summary: "Onboarding case opened on the AWS orchestration.",
     });
 
     await getNonPegaCaseStore().put(record);

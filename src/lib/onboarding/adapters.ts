@@ -1,10 +1,9 @@
 import { getServerConfig } from "@/lib/config/env";
 import {
+  clearReview,
   createCaseRecord,
   fetchCaseEvents,
   fetchCaseView,
-  getCaseMode,
-  getDemoSettings,
   saveDocument,
   submitCaseAction,
 } from "@/lib/onboarding/engine";
@@ -60,6 +59,13 @@ class MockDelegateAdapter implements OnboardingOrchestrationAdapter {
     caseId: string,
     request: SubmitCaseActionRequest,
   ): Promise<OnboardingCaseView> {
+    // Clearing a review is a reviewer's decision rather than a step in the
+    // customer's flow, but every orchestration must expose it the same way so
+    // the operations surface does not need to know which one is running.
+    if (request.actionId === "CLEAR_REVIEW") {
+      return clearReview(caseId);
+    }
+
     return submitCaseAction(caseId, request);
   }
 
@@ -110,19 +116,30 @@ export function getAdapter(mode: OrchestrationMode): OnboardingOrchestrationAdap
   }
 }
 
-export function getAdapterForCase(caseId: string): OnboardingOrchestrationAdapter {
-  // Read the same setting case creation used, so a mode switched at runtime
-  // stays coherent across the rest of the journey.
-  const activeMode = getDemoSettings().orchestrationMode;
-
-  // Pega and non-Pega own their own case stores, so the mock engine's
-  // case-scoped lookup would not find their cases and would silently fall
-  // back to the wrong orchestration.
-  if (activeMode === "pega" || activeMode === "non-pega") {
-    return getAdapter(activeMode);
+/**
+ * Which orchestration owns a case, decided by the case itself.
+ *
+ * Each orchestration mints its own identifiers, so the reference a customer
+ * already holds says who owns it. Reading the current setting instead would
+ * mean a switch flipped mid-journey sent the rest of an application to a
+ * system that has never heard of it.
+ */
+export function resolveCaseMode(caseId: string): OrchestrationMode {
+  if (caseId.startsWith("NPG-")) {
+    return "non-pega";
   }
 
-  return getAdapter(getCaseMode(caseId));
+  if (caseId.startsWith("ONB-")) {
+    return "mock-pega";
+  }
+
+  // Pega's IDs carry its work-class prefix and are not otherwise predictable,
+  // so anything unrecognised belongs to Pega.
+  return "pega";
+}
+
+export function getAdapterForCase(caseId: string): OnboardingOrchestrationAdapter {
+  return getAdapter(resolveCaseMode(caseId));
 }
 
 /** True when `pega` mode can be selected in this environment. */

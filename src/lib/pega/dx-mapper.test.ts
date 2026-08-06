@@ -252,6 +252,63 @@ describe("DX v2 case view mapping", () => {
     });
   });
 
+  it("shows the customer Pega's business ID, not its work-class ID", () => {
+    // Pega's case ID embeds the internal work class. Showing it to a customer
+    // is both meaningless to them and a disclosure of the implementation.
+    const view = mapDxCaseToView(caseInfo(), context);
+
+    expect(view.caseId).toBe("ODHMNT-AGENTICC-WORK C-192016");
+    expect(view.displayReference).toBe("C-192016");
+    expect(view.displayReference).not.toMatch(/ODHMNT/);
+  });
+
+  it("falls back to the case ID when Pega supplies no business ID", () => {
+    const view = mapDxCaseToView(
+      caseInfo({ businessID: undefined }),
+      context,
+    );
+
+    expect(view.displayReference).toBe("ODHMNT-AGENTICC-WORK C-192016");
+  });
+
+  it("surfaces documents from Pega's own Document page list", () => {
+    const view = mapDxCaseToView(
+      caseInfo({
+        content: {
+          Document: [{ DocumentName: "Proof.pdf", DocumentType: "Passport" }],
+        },
+      }),
+      context,
+    );
+
+    expect(view.documents?.[0]?.fileName).toBe("Proof.pdf");
+  });
+
+  it("shows an upload before Pega's content catches up", () => {
+    // Pega records the file in its case content later in its own flow. Until
+    // then the customer would see no acknowledgement of what they uploaded.
+    const view = mapDxCaseToView(caseInfo(), {
+      ...context,
+      collected: {
+        documents: [
+          {
+            documentId: "att-1",
+            kind: "ADDRESS",
+            fileName: "Utility_Bill.pdf",
+            fileType: "application/pdf",
+            fileSize: 1024,
+            status: "UPLOADED",
+            source: "upload",
+            evidenceReference: "att-1",
+          },
+        ],
+      },
+    });
+
+    expect(view.documents).toHaveLength(1);
+    expect(view.documents?.[0]?.kind).toBe("ADDRESS");
+  });
+
   it("marks progress as complete when the case resolves", () => {
     const view = mapDxCaseToView(caseInfo({ status: "Resolved-Completed" }), context);
 

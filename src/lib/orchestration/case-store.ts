@@ -100,11 +100,15 @@ export class FileNonPegaCaseStore implements NonPegaCaseStore {
 
   async put(record: NonPegaCase): Promise<void> {
     await fs.mkdir(this.directory, { recursive: true });
-    await fs.writeFile(
-      this.file(record.caseId),
-      JSON.stringify(record, null, 2),
-      "utf8",
-    );
+
+    // Write then rename, because a plain write is not atomic: a reader that
+    // arrives mid-write sees a truncated file and fails to parse it. The
+    // journey polls while it runs, so that race happens in practice.
+    const target = this.file(record.caseId);
+    const temporary = `${target}.${process.pid}.tmp`;
+
+    await fs.writeFile(temporary, JSON.stringify(record, null, 2), "utf8");
+    await fs.rename(temporary, target);
   }
 }
 

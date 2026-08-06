@@ -571,6 +571,24 @@ export function getModeOptions() {
   return MODE_OPTIONS;
 }
 
+/** The case the presenter is currently working with, whichever system owns it. */
+export function getCurrentCaseId(): string | undefined {
+  return readStore().settings.currentCaseId;
+}
+
+/**
+ * Point the operations surface at a case.
+ *
+ * Recorded for every orchestration, not only the mock engine, so a reviewer
+ * can act on the case a customer just opened regardless of which system is
+ * running it.
+ */
+export function setCurrentCaseId(caseId: string): void {
+  withStore((snapshot) => {
+    snapshot.settings.currentCaseId = caseId;
+  });
+}
+
 export function getCurrentCaseView() {
   const snapshot = readStore();
   if (!snapshot.settings.currentCaseId) {

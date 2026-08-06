@@ -4,10 +4,7 @@ import {
   getDemoControlEnabled,
   isDemoAuthorizedCookie,
 } from "@/lib/onboarding/demo-auth";
-import {
-  getCurrentCaseEvents,
-  getCurrentCaseView,
-} from "@/lib/onboarding/engine";
+import { loadCurrentCase } from "@/lib/onboarding/current-case";
 
 export async function GET(request: NextRequest) {
   if (!getDemoControlEnabled()) {
@@ -18,8 +15,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "Unauthorised." }, { status: 401 });
   }
 
-  return NextResponse.json({
-    caseView: getCurrentCaseView(),
-    events: getCurrentCaseEvents(),
+  const requested =
+    new URL(request.url).searchParams.get("caseId") ?? undefined;
+
+  return NextResponse.json(await loadCurrentCase(requested), {
+    headers: { "Cache-Control": "no-store" },
   });
 }
