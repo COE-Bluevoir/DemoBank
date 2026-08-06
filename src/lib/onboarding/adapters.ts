@@ -20,15 +20,26 @@ import type {
   SubmitCaseActionRequest,
   UploadedDocument,
 } from "@/lib/onboarding/types";
+import { NonPegaOrchestrationAdapter } from "@/lib/orchestration/non-pega-adapter";
 import { PegaOrchestrationAdapter } from "@/lib/pega/adapter";
 
 /**
  * Adapter selection.
  *
  * The route layer never knows which orchestration is active: it asks for an
- * adapter and receives something that satisfies the same interface. Swapping
- * `mock-pega` for `pega` therefore requires no change to routes, UI or the
- * normalized case model.
+ * adapter and receives something that satisfies the same interface.
+ *
+ * The modes are mutually exclusive, and deliberately so:
+ *
+ *   pega      Pega is the complete orchestration authority. This application
+ *             is only an experience and API adapter; no model participates in
+ *             the business workflow.
+ *   non-pega  The complete alternative, implemented outside Pega. Case state,
+ *             policy, exceptions, review gating, tool execution and
+ *             activation all live here, and Pega is never called.
+ *   mock-pega A deterministic stand-in for the Pega path, for local work.
+ *
+ * Comparing them is only meaningful because neither borrows from the other.
  */
 
 /** Deterministic in-process orchestration used for local development and demos. */
@@ -75,16 +86,13 @@ export class MockPegaOrchestrationAdapter extends MockDelegateAdapter {
 }
 
 /**
- * Standalone (non-Pega) comparison adapter.
+ * Non-Pega orchestration.
  *
- * Still backed by the deterministic engine; it exists so the same journey can
- * be demonstrated without a governed orchestration layer behind it.
+ * A complete alternative implementation: it owns case state, lifecycle,
+ * policy, exceptions, human-review gating, tool execution and activation.
+ * Pega is never called in this mode.
  */
-export class StandaloneAgentOrchestrationAdapter extends MockDelegateAdapter {
-  constructor() {
-    super("non-pega");
-  }
-}
+export { NonPegaOrchestrationAdapter } from "@/lib/orchestration/non-pega-adapter";
 
 export { PegaOrchestrationAdapter } from "@/lib/pega/adapter";
 
@@ -98,18 +106,20 @@ export function getAdapter(mode: OrchestrationMode): OnboardingOrchestrationAdap
       // like a working one, which is the failure mode this design forbids.
       return new PegaOrchestrationAdapter();
     case "non-pega":
-      return new StandaloneAgentOrchestrationAdapter();
+      return new NonPegaOrchestrationAdapter();
   }
 }
 
 export function getAdapterForCase(caseId: string): OnboardingOrchestrationAdapter {
   // Read the same setting case creation used, so a mode switched at runtime
-  // stays coherent across the rest of the journey. Live Pega cases have no
-  // entry in the local store, so the case-scoped lookup must not run for them.
+  // stays coherent across the rest of the journey.
   const activeMode = getDemoSettings().orchestrationMode;
 
-  if (activeMode === "pega") {
-    return getAdapter("pega");
+  // Pega and non-Pega own their own case stores, so the mock engine's
+  // case-scoped lookup would not find their cases and would silently fall
+  // back to the wrong orchestration.
+  if (activeMode === "pega" || activeMode === "non-pega") {
+    return getAdapter(activeMode);
   }
 
   return getAdapter(getCaseMode(caseId));

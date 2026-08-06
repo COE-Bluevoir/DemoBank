@@ -9,7 +9,28 @@ adapted to each industry by configuration. AI interprets; the workflow governs.
 
 ---
 
-## 1. The shape
+## 1. The switch
+
+`ORCHESTRATION_MODE` selects which system runs the business workflow. The two
+production modes are **complete and mutually exclusive** implementations of the
+same journey — neither borrows from the other, which is what makes comparing
+them meaningful.
+
+| | `pega` | `non-pega` |
+|---|---|---|
+| Orchestration authority | Pega, entirely | AWS/Bedrock, entirely |
+| This application's role | experience and API adapter only | experience and API adapter only |
+| Case state | Pega | DynamoDB (S3 for evidence) |
+| Policy and rules | Pega | `src/lib/orchestration/policy.ts` |
+| Exceptions | Pega | own exception records |
+| Human-review gating | Pega assignments | own review gate |
+| Tool execution | Pega | tool invoker |
+| Activation | Pega | `create-customer`, idempotent |
+| Bedrock in the workflow | **none** | all interpretation |
+| Pega called | yes | **never** |
+
+`mock-pega` is a third, local-only mode: a deterministic stand-in for the Pega
+path so the journey runs with no external dependencies.
 
 ```
   /accelerator  ── choose industry ──▶  /banking · /insurance · /telecom
@@ -21,20 +42,42 @@ adapted to each industry by configuration. AI interprets; the workflow governs.
                                     ┌─────────▼─────────┐
                                     │  Onboarding BFF   │  normalized case model
                                     └─────────┬─────────┘
-                          ┌───────────────────┼───────────────────┐
-                   ┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
-                   │ mock-pega   │     │    pega     │     │  non-pega   │
-                   │ (in-process)│     │  (DX API v2)│     │ (AI-only)   │
-                   └─────────────┘     └─────────────┘     └─────────────┘
-
-  Agents (Amazon Bedrock)                    Enterprise tools (10)
-  orchestrator → policy                      extract · verify · screen ·
-                 document                    duplicate · credit bureau ·
-                 screening                   create-customer · communication
+                    ORCHESTRATION_MODE selects exactly one:
+              ┌───────────────┬───────────────┬───────────────┐
+        ┌─────▼─────┐   ┌─────▼─────┐   ┌─────▼─────┐
+        │ mock-pega │   │   pega    │   │ non-pega  │
+        │  (local)  │   │ DX API v2 │   │  Bedrock  │
+        └───────────┘   └───────────┘   └───────────┘
+                          Pega owns      agents + policy
+                          everything     engine own
+                                         everything
 ```
 
-Everything the customer sees goes through one adapter interface, so switching
-orchestration changes no routes and no UI.
+Routes, UI and the normalized case model are identical in every mode: they all
+satisfy `OnboardingOrchestrationAdapter`.
+
+### Verified non-Pega journey
+
+A complete case with no Pega involvement, showing who decided what:
+
+```
+CASE        Case created          opened outside the governed workflow
+CASE        Details captured      applicant details recorded
+HUMAN       Consent captured      customer accepted the consent statement
+AGENT       document              1 discrepancy(ies) found
+AGENT       screening             one or more checks require human review
+RULE        Policy evaluated      MANUAL_REVIEW_REQUIRED
+HUMAN       Review cleared        reviewer ops.reviewer cleared the case
+INTEGRATION Customer created      account opened
+
+exceptions : DOCUMENT_DISCREPANCY/CORRECTABLE, SCREENING_SCREEN_PEP/MATERIAL
+screening  : sanctions=CLEAR pep=POTENTIAL_MATCH duplicate=CLEAR bureau=PASSED
+outcome    : CUST-647389 / ACC-831033
+```
+
+Agents produced the evidence; the deterministic policy engine decided what it
+meant; the review gate held the case until a person cleared it. That division
+is the same one Pega enforces — implemented outside it.
 
 ## 2. Industry packs
 

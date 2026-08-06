@@ -2,6 +2,7 @@ import { ZodError } from "zod";
 
 import { ConfigurationError, getServerConfig } from "@/lib/config/env";
 import { logServerError } from "@/lib/observability/logger";
+import { NonPegaCaseNotFoundError } from "@/lib/orchestration/non-pega-adapter";
 import { PegaIntegrationError } from "@/lib/pega/errors";
 import {
   BRAND,
@@ -953,6 +954,12 @@ export function serializeError(error: unknown) {
         "This service is temporarily unavailable. Your application has been saved.",
       statusCode: 503,
     };
+  }
+
+  // The non-Pega orchestration owns its own case store, so a missing case
+  // there is still a 404 rather than a server fault.
+  if (error instanceof NonPegaCaseNotFoundError) {
+    return { message: "We could not find that application.", statusCode: 404 };
   }
 
   // Schema rejections are client input problems, not server faults.
