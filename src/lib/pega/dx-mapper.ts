@@ -103,7 +103,10 @@ function nestedContent(
  * Pega's resolved work statuses are authoritative when present, because a
  * resolved case must never be shown as still in progress.
  */
-export function mapDxStatus(caseInfo: DxCaseInfo): OnboardingStatus {
+export function mapDxStatus(
+  caseInfo: DxCaseInfo,
+  collected?: Record<string, unknown>,
+): OnboardingStatus {
   const workStatus = normalize(caseInfo.status ?? "");
 
   if (workStatus.startsWith("resolved-")) {
@@ -128,7 +131,15 @@ export function mapDxStatus(caseInfo: DxCaseInfo): OnboardingStatus {
   // A verification stage normally means "please wait". If Pega has an open
   // assignment asking for a document, the customer has something to do, so the
   // uploader must be shown instead of a progress indicator.
-  if (awaitsDocumentUpload(caseInfo)) {
+  // The assignment name is not always the giveaway: Pega collects the address
+  // proof at a step called "Collect Address". The adapter reads the action's
+  // own attachment control and records that here, so the uploader is shown
+  // wherever Pega actually asks for a file.
+  if (
+    awaitsDocumentUpload(caseInfo) ||
+    (collected?.awaitingDocumentUpload === true &&
+      collected?.documentsProvided !== true)
+  ) {
     return "DOCUMENTS_REQUIRED";
   }
 
@@ -438,7 +449,7 @@ export function mapDxCaseToView(
     collected?: Record<string, unknown>;
   },
 ): OnboardingCaseView {
-  const status = mapDxStatus(caseInfo);
+  const status = mapDxStatus(caseInfo, context.collected);
 
   return {
     caseId: caseInfo.ID,

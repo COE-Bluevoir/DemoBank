@@ -58,3 +58,9 @@ yarn-error.log*
 # Scratch files written by verification scripts. One of these held a service
 # API key, so they are excluded rather than tidied up by hand each time.
 *.tmp
+
+# Pega's own application documentation. It carries a Pegasystems notice
+# restricting copying and distribution, and these repositories are public, so
+# the files stay local. docs/pega-step-contract.md records what we observed
+# from the API instead.
+*.docx
