@@ -231,17 +231,19 @@ document.
 
 **Not working:**
 
-- **Address document upload returns 422 in production.** Identity upload
-  succeeds, so S3, the compute role and the attachment path are all fine — it
-  is specific to the second document. Undiagnosed.
+- **Pega's automated step stalls.** The case reaches Verify Identity and parks
+  at "Waiting for Agent to process" with no assignment to act on, so it cannot
+  reach Create Customer. Everything before it works: the case is created,
+  consent is accepted, all four Capture Details steps pass, and both documents
+  attach to the case. See [pega-step-contract.md](./pega-step-contract.md).
 - **AgentCore Gateway / MCP** — the tool seam exists but tools are invoked
   in-process. Gateway needs the services reachable at a public endpoint.
 - **Bedrock Knowledge Bases** — the policy agent grounds in the industry pack,
   not a vector store.
 - **Anthropic models** — blocked behind the Bedrock use-case form; Nova is in
   use and works.
-- **Pega automated agent step** stalls at "Waiting for Agent to process".
-- `Channel`, `SessionContext` and `Consent.ConsentName` do not persist in Pega.
+- `Channel` and `SessionContext` do not persist in Pega: no flow action's view
+  exposes them, so no client can send them.
 
 ## 10. Outstanding actions
 
