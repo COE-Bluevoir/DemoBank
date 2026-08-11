@@ -1,31 +1,51 @@
 import Link from "next/link";
 
-import { BRAND } from "@/lib/onboarding/constants";
+import { getIndustryPack } from "@/lib/industry/registry";
+import type { IndustryId } from "@/lib/industry/types";
 import { Button } from "@/components/ui";
 
-export function BankHeader() {
+/**
+ * Site chrome for whichever organisation the customer is dealing with.
+ *
+ * The journey pages are shared across industries, so the header has to be too.
+ * Hardcoding the bank here is what put "NorthStar Bank" above an insurance
+ * application — the one thing a configuration-driven accelerator must not do.
+ */
+export function BankHeader({
+  industryId = "banking",
+}: {
+  industryId?: IndustryId;
+}) {
+  const pack = getIndustryPack(industryId);
+  const home = industryId === "banking" ? "/" : `/${industryId}`;
+
   return (
-    <header className="border-b border-white/10 bg-[var(--color-navy)] text-white">
+    <header
+      className="border-b border-white/10 bg-[var(--color-navy)] text-white"
+      style={{ borderBottomWidth: 3, borderBottomColor: pack.brand.accent }}
+    >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-8">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/12 text-lg font-bold">
-            N
+        <Link href={home} className="flex items-center gap-3">
+          <div
+            className="flex h-11 w-11 items-center justify-center rounded-2xl text-lg font-bold"
+            style={{ backgroundColor: pack.brand.accent }}
+          >
+            {pack.brand.organisationName.charAt(0)}
           </div>
           <div>
-            <p className="text-lg font-semibold">{BRAND.bankName}</p>
-            <p className="text-xs text-white/70">{BRAND.tagline}</p>
+            <p className="text-lg font-semibold">
+              {pack.brand.organisationName}
+            </p>
+            <p className="text-xs text-white/70">{pack.brand.tagline}</p>
           </div>
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-white/80 md:flex">
-          <Link href="/" className="hover:text-white">
-            Accounts
+          <Link href={home} className="hover:text-white">
+            {pack.brand.productName}
           </Link>
-          <a href="#cards" className="hover:text-white">
-            Cards
-          </a>
-          <a href="#borrow" className="hover:text-white">
-            Borrow
-          </a>
+          <Link href="/accelerator" className="hover:text-white">
+            Industries
+          </Link>
           <a href="#support" className="hover:text-white">
             Support
           </a>

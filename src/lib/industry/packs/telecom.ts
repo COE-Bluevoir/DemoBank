@@ -8,6 +8,57 @@ import type { IndustryPack } from "@/lib/industry/types";
  */
 export const telecomPack: IndustryPack = {
   id: "telecom",
+  industryCode: "TELECOM",
+  journeyCode: "BUSINESS_CONNECTIVITY",
+  productOrServiceCode: "DEDICATED_INTERNET_LEASED_LINE",
+  consentTextVersion: "vantage-consent-v1",
+
+  documentProfile: [
+    {
+      code: "INCORPORATION_CERTIFICATE",
+      kind: "IDENTITY",
+      label: "Certificate of incorporation",
+      description: "Confirms the company exists and states its registered office.",
+      mandatory: true,
+    },
+    {
+      code: "REPRESENTATIVE_ID",
+      kind: "IDENTITY",
+      label: "Authorised signatory identity",
+      description: "Identity evidence for the person authorising the order.",
+      mandatory: true,
+    },
+    {
+      code: "SERVICE_ORDER",
+      kind: "IDENTITY",
+      label: "Service order",
+      description: "The connectivity ordered, and the site it is ordered for.",
+      mandatory: true,
+    },
+    {
+      code: "SITE_ADDRESS_PROOF",
+      kind: "ADDRESS",
+      label: "Site address proof",
+      description: "A utility bill confirming occupancy of the installation site.",
+      mandatory: true,
+    },
+    {
+      code: "SITE_AUTHORISATION",
+      kind: "ADDRESS",
+      label: "Site authorisation letter",
+      description: "Permission to install equipment at the site.",
+      mandatory: false,
+    },
+  ],
+
+  checkProfile: {
+    verifyEntity: true,
+    screenParty: false,
+    checkDuplicate: true,
+    validateAddress: true,
+    evaluateExternalRisk: true,
+    checkServiceability: true,
+  },
   displayName: "Telecom",
   objective: "Onboard a business site and activate connectivity.",
   completeness: "adaptability-demonstration",

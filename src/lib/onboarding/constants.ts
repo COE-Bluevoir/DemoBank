@@ -131,3 +131,29 @@ export const CASE_PROGRESS_STEPS = [
   { id: "review", label: "Review" },
   { id: "complete", label: "Complete" },
 ] as const;
+
+/**
+ * The organisation the demo onboards.
+ *
+ * Taken from the supplied sample documents rather than the storyline prose:
+ * the incorporation certificate, GST certificate and bills all name Sunspire
+ * Retail, and extraction is checked against what the files actually say.
+ */
+export const DEMO_ORGANISATION = {
+  legalName: "Sunspire Retail Private Limited",
+  tradeName: "Sunspire Retail",
+  registrationNumber: "U52399KA2021PTC148275",
+  panNumber: "AAQCS4582L",
+  taxId: "29AAQCS4582L1Z9",
+  organisationType: "Private Limited Company",
+  industrySector: "Retail",
+  incorporationDate: "2021-03-18",
+  authorisedRepresentative: "Arjun Mehta",
+  registeredAddress: {
+    line1: "2nd Floor, 14 MG Road",
+    city: "Bengaluru",
+    state: "Karnataka",
+    postalCode: "560001",
+    country: "India",
+  },
+} as const;

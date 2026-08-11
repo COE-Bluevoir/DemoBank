@@ -59,6 +59,11 @@ export interface ConsentView {
 
 export interface DocumentView {
   documentId: string;
+  /**
+   * The requirement this file answered, from the industry's document profile.
+   * Optional so cases created before the profile existed still read back.
+   */
+  documentCode?: string;
   kind: DocumentKind;
   fileName: string;
   fileType: string;
@@ -154,6 +159,17 @@ export interface OnboardingCaseView {
   };
   alert?: CustomerAlert;
   statusDetail?: string;
+  /**
+   * A commercial alternative awaiting the customer's answer.
+   *
+   * Present when what can be delivered differs from what was ordered. The
+   * journey cannot proceed on the customer's behalf, so the offer has to reach
+   * the browser rather than being resolved silently.
+   */
+  pendingChoice?: {
+    reason: string;
+    evidence: Record<string, unknown>;
+  };
 }
 
 export interface CreateOnboardingCaseRequest {
@@ -186,6 +202,14 @@ export interface SubmitCaseActionRequest {
 
 export interface UploadedDocument {
   kind: DocumentKind;
+  /**
+   * Which requirement from the industry's document profile this file answers.
+   *
+   * The evidence class alone is not enough to tell an incorporation
+   * certificate from a tax certificate, and extraction is driven by the
+   * specific document rather than its class.
+   */
+  documentCode?: string;
   fileName: string;
   fileType: string;
   fileSize: number;

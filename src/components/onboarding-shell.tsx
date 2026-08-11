@@ -4,6 +4,7 @@ import type {
   OnboardingCaseView,
   OrchestrationMode,
 } from "@/lib/onboarding/types";
+import { getIndustryPack } from "@/lib/industry/registry";
 import { CaseReferenceBadge } from "@/components/case-reference-badge";
 import { JourneyProgress } from "@/components/journey-progress";
 import { Card } from "@/components/ui";
@@ -24,16 +25,18 @@ export function OnboardingShell({
   rightRail: ReactNode;
   children: ReactNode;
 }) {
+  const pack = getIndustryPack(caseData.industryId);
+
   return (
     <div className="space-y-6">
       <Card className="space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-teal)]">
-              Digital account opening
+              {pack.displayName} onboarding
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--color-ink)]">
-              Everyday Plus account application
+              {pack.brand.productName} application
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-ink-subtle)]">
               Complete your application with clear forms, secure document

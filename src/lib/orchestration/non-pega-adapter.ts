@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { getAgentLedger } from "@/lib/agents/ledger";
 import { reviewDocuments, reviewScreening } from "@/lib/agents/specialists";
+import {
+  extractDocuments,
+  isCleanOutcome,
+  needsCustomerChoice,
+  runChecks,
+} from "@/lib/orchestration/checks";
 import type { AgentDecisionRecord } from "@/lib/agents/contracts";
 import { getIndustryPack } from "@/lib/industry/registry";
 import { formatFullName } from "@/lib/onboarding/applicant-name";
@@ -146,6 +152,7 @@ function toView(record: NonPegaCase): OnboardingCaseView {
       ? { id: ACTION_ID[record.status], label, description: "" }
       : undefined,
     progress: buildProgress(record.status),
+    pendingChoice: record.pendingChoice,
     applicant: record.applicant,
     documents: record.documents,
     assistantMessages: [],
@@ -272,6 +279,24 @@ export class NonPegaOrchestrationAdapter
         break;
       }
 
+      case "CONFIRM_ADDRESS":
+      case "ACCEPT_ALTERNATIVE": {
+        // The customer accepts what can actually be delivered. Recorded as
+        // their decision, with what they were offered, because the order has
+        // changed and the audit trail has to show who changed it.
+        record.acceptedAlternative = true;
+        recordEvent(record, {
+          category: "HUMAN",
+          displayName: "Alternative accepted",
+          status: "SUCCEEDED",
+          summary: "Customer accepted the service available at the site.",
+          technicalDetails: record.pendingChoice?.evidence,
+        });
+        record.pendingChoice = undefined;
+        await this.runVerification(record);
+        break;
+      }
+
       case "CLEAR_REVIEW": {
         // The human-review gate. Only clearing it lets the case proceed.
         record.reviewClearedAt = nowIso();
@@ -303,11 +328,17 @@ export class NonPegaOrchestrationAdapter
   ): Promise<DocumentUploadResponse> {
     const record = await this.require(caseId);
 
+    // Replace the document that answered the same requirement, not merely one
+    // of the same class. Banking asks for four documents and three of them are
+    // identity evidence; deduping by class would keep only the last.
+    const slot = document.documentCode ?? document.kind;
+
     record.documents = record.documents.filter(
-      (item) => item.kind !== document.kind,
+      (item) => (item.documentCode ?? item.kind) !== slot,
     );
     record.documents.push({
-      documentId: `${caseId}-${document.kind}`,
+      documentId: `${caseId}-${slot}`,
+      documentCode: document.documentCode,
       kind: document.kind,
       fileName: document.fileName,
       fileType: document.fileType,
@@ -322,7 +353,7 @@ export class NonPegaOrchestrationAdapter
     await getNonPegaCaseStore().put(record);
 
     return {
-      documentId: `${caseId}-${document.kind}`,
+      documentId: `${caseId}-${slot}`,
       fileName: document.fileName,
       status: "UPLOADED",
       evidenceReference: document.storageReference ?? "",
@@ -398,6 +429,71 @@ export class NonPegaOrchestrationAdapter
       : undefined;
 
     record.screeningResults = screeningFinding?.results ?? [];
+
+    // The external checks this journey calls for. Extraction runs first so the
+    // later checks compare the application against what the evidence actually
+    // says, rather than against itself.
+    const checkContext = {
+      caseId: record.caseId,
+      correlationId: record.correlationId,
+    };
+
+    extractDocuments(
+      pack,
+      checkContext,
+      record.documents
+        .map((item) => item.documentCode)
+        .filter((code): code is string => Boolean(code)),
+    );
+
+    const findings = runChecks(pack, checkContext);
+
+    for (const finding of findings) {
+      recordEvent(record, {
+        category: "TOOL",
+        displayName: finding.check,
+        status: isCleanOutcome(finding.outcome) ? "SUCCEEDED" : "WAITING",
+        summary: finding.detail ?? finding.outcome,
+        technicalDetails: {
+          providerReference: finding.providerReference,
+          reasonCode: finding.reasonCode,
+          confidence: finding.confidence,
+        },
+      });
+    }
+
+    // Serviceability offering less than was ordered is a commercial change.
+    // Only the customer can accept it, so the case stops here rather than
+    // provisioning something they did not buy.
+    const choice = needsCustomerChoice(findings);
+
+    if (choice && record.acceptedAlternative !== true) {
+      record.pendingChoice = {
+        reason: choice.reasonCode ?? "ALTERNATIVE_OFFERED",
+        evidence: choice.evidence ?? {},
+      };
+      recordEvent(record, {
+        category: "RULE",
+        displayName: "Customer choice required",
+        status: "WAITING",
+        summary: "The service available at the site differs from the order.",
+      });
+      setStatus(record, "ADDRESS_CONFIRMATION_REQUIRED");
+      return;
+    }
+
+    // Every non-clean finding becomes an input to policy. The check layer does
+    // not get to say what a REVIEW means — that is the engine's decision.
+    record.screeningResults = [
+      ...record.screeningResults,
+      ...findings
+        .filter((finding) => !isCleanOutcome(finding.outcome))
+        .map((finding) => ({
+          check: finding.check,
+          outcome: finding.outcome,
+          detail: finding.detail,
+        })),
+    ];
 
     for (const entry of agentRecords) {
       recordEvent(record, {

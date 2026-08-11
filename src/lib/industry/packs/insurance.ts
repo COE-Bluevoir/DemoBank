@@ -8,6 +8,58 @@ import type { IndustryPack } from "@/lib/industry/types";
  */
 export const insurancePack: IndustryPack = {
   id: "insurance",
+  industryCode: "INSURANCE",
+  journeyCode: "COMMERCIAL_PROPERTY_POLICY",
+  productOrServiceCode: "COMMERCIAL_PROPERTY_FIRE_POLICY",
+  consentTextVersion: "meridian-consent-v1",
+
+  documentProfile: [
+    {
+      code: "INCORPORATION_CERTIFICATE",
+      kind: "IDENTITY",
+      label: "Certificate of incorporation",
+      description: "Confirms the company exists and states its registered office.",
+      mandatory: true,
+    },
+    {
+      code: "REPRESENTATIVE_ID",
+      kind: "IDENTITY",
+      label: "Authorised signatory identity",
+      description: "Identity evidence for the person authorising the proposal.",
+      mandatory: true,
+    },
+    {
+      code: "PROPOSAL_FORM",
+      kind: "IDENTITY",
+      label: "Commercial insurance proposal",
+      description: "States the risk location and the protections in place.",
+      mandatory: true,
+    },
+    {
+      code: "RISK_QUESTIONNAIRE",
+      kind: "ADDRESS",
+      label: "Fire risk questionnaire",
+      description:
+        "The surveyor's record of the same premises, used to corroborate the proposal.",
+      mandatory: true,
+    },
+    {
+      code: "PROPERTY_SCHEDULE",
+      kind: "ADDRESS",
+      label: "Property schedule",
+      description: "Contents and values for the premises being insured.",
+      mandatory: false,
+    },
+  ],
+
+  checkProfile: {
+    verifyEntity: true,
+    screenParty: true,
+    checkDuplicate: false,
+    validateAddress: false,
+    evaluateExternalRisk: true,
+    checkServiceability: false,
+  },
   displayName: "Insurance",
   objective: "Complete a policy application and issue cover.",
   completeness: "adaptability-demonstration",

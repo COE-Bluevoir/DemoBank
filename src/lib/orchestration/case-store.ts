@@ -44,6 +44,19 @@ export interface NonPegaCase {
   reviewClearedAt?: string;
   reviewedBy?: string;
 
+  /**
+   * A commercial alternative the customer has been asked to accept.
+   *
+   * Present only while the case is waiting on that answer. Serviceability
+   * offering less than was ordered cannot be applied without it.
+   */
+  pendingChoice?: {
+    reason: string;
+    evidence: Record<string, unknown>;
+  };
+  /** Set once the customer accepts the alternative that was offered. */
+  acceptedAlternative?: boolean;
+
   /** Screening evidence, retained for audit. */
   screeningResults: Array<{ check: string; outcome: string; detail?: string }>;
 

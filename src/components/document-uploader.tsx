@@ -2,6 +2,7 @@
 
 import { Upload, X } from "lucide-react";
 
+import type { DocumentRequirement, IndustryPack } from "@/lib/industry/types";
 import type { DocumentKind, DocumentView } from "@/lib/onboarding/types";
 import { formatBytes } from "@/lib/onboarding/utils";
 import { Badge, Button, Card, SectionTitle } from "@/components/ui";
@@ -12,29 +13,33 @@ interface UploadingState {
 }
 
 function DocSlot({
-  kind,
+  requirement,
   document,
   uploading,
   onFileChange,
   onRemove,
 }: {
-  kind: DocumentKind;
+  requirement: DocumentRequirement;
   document?: DocumentView;
   uploading?: UploadingState | null;
-  onFileChange: (kind: DocumentKind, file: File) => void;
+  onFileChange: (requirement: DocumentRequirement, file: File) => void;
   onRemove: (kind: DocumentKind) => void;
 }) {
+  const kind = requirement.kind;
   return (
     <div className="rounded-[24px] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-soft)] p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <p className="text-sm font-semibold text-[var(--color-ink)]">
-            {kind === "IDENTITY"
-              ? "Government-issued identity"
-              : "Proof of address"}
+            {requirement.label}
+            {requirement.mandatory ? null : (
+              <span className="ml-2 text-xs font-normal text-[var(--color-ink-muted)]">
+                optional
+              </span>
+            )}
           </p>
           <p className="text-sm text-[var(--color-ink-subtle)]">
-            PDF, JPG or PNG only. Make sure all files are clear and readable.
+            {requirement.description}
           </p>
         </div>
         {document ? <Badge tone="success">Uploaded</Badge> : null}
@@ -75,7 +80,7 @@ function DocSlot({
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) {
-                onFileChange(kind, file);
+                onFileChange(requirement, file);
               }
               event.target.value = "";
             }}
@@ -101,6 +106,7 @@ function DocSlot({
 }
 
 export function DocumentUploader({
+  pack,
   documents,
   uploading,
   busy,
@@ -108,37 +114,47 @@ export function DocumentUploader({
   onRemove,
   onUseDemoDocuments,
 }: {
+  pack: IndustryPack;
   documents: DocumentView[];
   uploading?: UploadingState | null;
   busy?: boolean;
-  onFileChange: (kind: DocumentKind, file: File) => void;
+  onFileChange: (requirement: DocumentRequirement, file: File) => void;
   onRemove: (kind: DocumentKind) => void;
   onUseDemoDocuments: () => void;
 }) {
-  const identity = documents.find((item) => item.kind === "IDENTITY");
-  const address = documents.find((item) => item.kind === "ADDRESS");
+  // Each industry asks for its own evidence: a bank wants incorporation and a
+  // tax certificate, an insurer wants a proposal and a surveyor's
+  // questionnaire. Rendering a fixed identity/address pair asked every
+  // industry for the bank's documents.
+  const profile = pack.documentProfile;
 
   return (
     <Card className="space-y-6">
       <SectionTitle
         title="Documents"
-        description="Upload your identity document and proof of address, or continue with the available sample pack in this environment."
+        description={`Upload the evidence required for your ${pack.brand.productName}, or continue with the sample pack in this environment.`}
       />
       <div className="grid gap-4 lg:grid-cols-2">
-        <DocSlot
-          kind="IDENTITY"
-          document={identity}
-          uploading={uploading}
-          onFileChange={onFileChange}
-          onRemove={onRemove}
-        />
-        <DocSlot
-          kind="ADDRESS"
-          document={address}
-          uploading={uploading}
-          onFileChange={onFileChange}
-          onRemove={onRemove}
-        />
+        {profile.map((requirement) => (
+          <DocSlot
+            key={requirement.code}
+            requirement={requirement}
+            document={documents.find(
+              (item) =>
+                item.documentCode === requirement.code ||
+                // Cases opened before documents carried a code fall back to
+                // the evidence class, but only where the class identifies one
+                // requirement — otherwise a single file appears in every slot.
+                (!item.documentCode &&
+                  item.kind === requirement.kind &&
+                  profile.filter((entry) => entry.kind === requirement.kind)
+                    .length === 1),
+            )}
+            uploading={uploading}
+            onFileChange={onFileChange}
+            onRemove={onRemove}
+          />
+        ))}
       </div>
       <div className="flex flex-wrap gap-3">
         <Button disabled={busy} type="button" onClick={onUseDemoDocuments}>

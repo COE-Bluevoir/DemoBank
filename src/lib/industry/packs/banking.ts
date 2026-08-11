@@ -8,6 +8,57 @@ import type { IndustryPack } from "@/lib/industry/types";
  */
 export const bankingPack: IndustryPack = {
   id: "banking",
+  industryCode: "BANKING",
+  journeyCode: "BUSINESS_CURRENT_ACCOUNT",
+  productOrServiceCode: "BUSINESS_CURRENT_ACCOUNT_ONLINE_BANKING",
+  consentTextVersion: "northstar-consent-v1",
+
+  // The order the customer is asked for evidence. The telephone bill is last
+  // because it is the one the journey expects to disagree with the
+  // application, and the discrepancy only means something once the registered
+  // address has been established by the incorporation certificate.
+  documentProfile: [
+    {
+      code: "INCORPORATION_CERTIFICATE",
+      kind: "IDENTITY",
+      label: "Certificate of incorporation",
+      description:
+        "Confirms the company exists and states its registered office.",
+      mandatory: true,
+    },
+    {
+      code: "REPRESENTATIVE_ID",
+      kind: "IDENTITY",
+      label: "Authorised signatory identity",
+      description:
+        "Identity evidence for the person authorised to open the account.",
+      mandatory: true,
+    },
+    {
+      code: "TAX_REGISTRATION",
+      kind: "IDENTITY",
+      label: "Tax registration certificate",
+      description: "GST registration for the business.",
+      mandatory: true,
+    },
+    {
+      code: "ADDRESS_PROOF",
+      kind: "ADDRESS",
+      label: "Business address proof",
+      description:
+        "A recent utility or telephone bill showing the business address.",
+      mandatory: true,
+    },
+  ],
+
+  checkProfile: {
+    verifyEntity: true,
+    screenParty: true,
+    checkDuplicate: true,
+    validateAddress: true,
+    evaluateExternalRisk: true,
+    checkServiceability: false,
+  },
   displayName: "Banking",
   objective: "Open an everyday account and activate online banking.",
   completeness: "reference-implementation",

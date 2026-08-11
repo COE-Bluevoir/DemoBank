@@ -15,6 +15,52 @@ import type { ApplicantView, DocumentKind } from "@/lib/onboarding/types";
 
 export type IndustryId = "banking" | "insurance" | "telecom";
 
+/** Codes the orchestration layer is keyed on, per the accelerator contract. */
+export type IndustryCode = "BANKING" | "INSURANCE" | "TELECOM";
+
+export type JourneyCode =
+  | "BUSINESS_CURRENT_ACCOUNT"
+  | "COMMERCIAL_PROPERTY_POLICY"
+  | "BUSINESS_CONNECTIVITY";
+
+/**
+ * A document the journey asks for.
+ *
+ * `code` is the category the extraction tool is told to expect, and is what
+ * ties an uploaded file to its ground-truth extraction.
+ */
+export interface DocumentRequirement {
+  code: string;
+  label: string;
+  description: string;
+  /**
+   * Which class of evidence this counts as.
+   *
+   * Several documents can share a class — an incorporation certificate and a
+   * GST certificate both evidence the organisation — so the code identifies
+   * the document while the kind drives verification and policy.
+   */
+  kind: DocumentKind;
+  /** False for evidence that is useful but not required to proceed. */
+  mandatory: boolean;
+}
+
+/**
+ * Which external checks this journey runs.
+ *
+ * Declared rather than inferred: a telecom journey checks serviceability and
+ * has no use for sanctions screening of a warehouse, and an insurer needs an
+ * underwriting score rather than a credit bureau file.
+ */
+export interface CheckProfile {
+  verifyEntity: boolean;
+  screenParty: boolean;
+  checkDuplicate: boolean;
+  validateAddress: boolean;
+  evaluateExternalRisk: boolean;
+  checkServiceability: boolean;
+}
+
 /** A field the customer is asked for during intake. */
 export interface IntakeField {
   /** Key on `ApplicantView`. Constrained so packs cannot invent storage. */
@@ -62,6 +108,17 @@ export interface IndustryBrand {
 
 export interface IndustryPack {
   id: IndustryId;
+  /** Sent to the orchestration layer; selects behaviour, not presentation. */
+  industryCode: IndustryCode;
+  journeyCode: JourneyCode;
+  /** What is being opened, issued or provisioned. */
+  productOrServiceCode: string;
+  /** Version of the consent wording the customer accepted. */
+  consentTextVersion: string;
+  /** Evidence this journey collects, in the order it is asked for. */
+  documentProfile: readonly DocumentRequirement[];
+  /** External checks this journey runs. */
+  checkProfile: CheckProfile;
   /** Shown in the accelerator launcher. */
   displayName: string;
   /** One line describing the onboarding objective for this industry. */

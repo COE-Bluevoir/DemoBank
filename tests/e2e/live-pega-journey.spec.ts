@@ -139,37 +139,37 @@ test("customer completes the Everyday Plus journey with every field filled", asy
   });
 
   await test.step("upload documents if Pega asks for them", async () => {
-    // Pega currently blocks earlier, at Collect Address, so the uploader may
-    // never appear. Requiring it would make this test assert something about
-    // Pega's configuration rather than about this application.
-    const fileInputs = page.locator('input[type="file"]');
-    const uploaderShown = await fileInputs
-      .first()
-      .isVisible()
-      .catch(() => false);
+    // Pega may block earlier, so the uploader is not guaranteed to appear.
+    // Requiring it would assert something about Pega's configuration rather
+    // than about this application.
+    const inputs = page.locator('input[type="file"]');
 
-    if (!uploaderShown) {
+    if (!(await inputs.first().isVisible().catch(() => false))) {
       return;
     }
 
-    await fileInputs.nth(0).setInputFiles({
-      name: "Ananya_Rao_Identity.pdf",
-      mimeType: "application/pdf",
-      buffer: pdfFixture("IDENTITY"),
-    });
+    // The evidence list comes from the industry pack, so upload whatever this
+    // journey asks for rather than a fixed pair.
+    for (let index = 0; index < 8; index += 1) {
+      const remaining = page.locator('input[type="file"]');
+      const before = await remaining.count();
 
-    await expect(page.getByText("Ananya_Rao_Identity.pdf")).toBeVisible({
-      timeout: 60_000,
-    });
+      if (before === 0) {
+        break;
+      }
 
-    await page
-      .locator('input[type="file"]')
-      .last()
-      .setInputFiles({
-        name: "Ananya_Rao_Utility_Bill.pdf",
+      await remaining.first().setInputFiles({
+        name: `Sunspire_Evidence_${index + 1}.pdf`,
         mimeType: "application/pdf",
-        buffer: pdfFixture("ADDRESS"),
+        buffer: pdfFixture(index === 0 ? "IDENTITY" : "ADDRESS"),
       });
+
+      await expect
+        .poll(() => page.locator('input[type="file"]').count(), {
+          timeout: 60_000,
+        })
+        .toBeLessThan(before);
+    }
   });
 
   await test.step("reach a customer-safe outcome", async () => {
@@ -177,7 +177,7 @@ test("customer completes the Everyday Plus journey with every field filled", asy
     // being configured — the customer must land on a neutral, business-safe
     // screen rather than a raw technical error.
     const outcome = page
-      .getByRole("heading", { name: /Welcome to NorthStar Bank/i })
+      .getByRole("heading", { name: /Your account is open/i })
       .or(page.getByRole("heading", { name: "Routine review" }))
       .or(page.getByText("Confirm your address"))
       .or(page.getByText("Verification saved for later"))

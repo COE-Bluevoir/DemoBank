@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { requirePegaConfig } from "@/lib/config/env";
+import { getIndustryPack } from "@/lib/industry/registry";
+import { DEMO_ORGANISATION } from "@/lib/onboarding/constants";
 import { formatFullName } from "@/lib/onboarding/applicant-name";
+import { formatAddress } from "@/lib/onboarding/party";
 import { getDocumentStorage } from "@/lib/storage/document-storage";
 import type {
   AssistantMessage,
@@ -34,10 +37,36 @@ import {
 } from "@/lib/pega/dx-schemas";
 import { PegaIntegrationError } from "@/lib/pega/errors";
 import { PegaHttpClient } from "@/lib/pega/http-client";
+import { logServerError } from "@/lib/observability/logger";
 import {
   SAMPLE_DOCUMENT_FILE_NAMES,
   sampleDocumentPdf,
 } from "@/lib/pega/sample-documents";
+
+/**
+ * The organisation being onboarded, in Pega's shape.
+ *
+ * Property names come from the integration contract rather than the data
+ * model document — the two differ, and the contract is what the case type
+ * actually accepts on create.
+ */
+function organisationContent(): Record<string, string> {
+  return {
+    OrganizationName: DEMO_ORGANISATION.legalName,
+    RegistrationNumber: DEMO_ORGANISATION.registrationNumber,
+    TaxIdentifier: DEMO_ORGANISATION.panNumber ?? "",
+    OrganizationType: DEMO_ORGANISATION.organisationType,
+    CountryOfRegistration: DEMO_ORGANISATION.registeredAddress.country,
+    IndustrySector: DEMO_ORGANISATION.industrySector,
+    // Pega stores dates unpunctuated on create.
+    DateOfIncorporation: (DEMO_ORGANISATION.incorporationDate ?? "").replace(
+      /-/g,
+      "",
+    ),
+    RegisteredAddress: formatAddress(DEMO_ORGANISATION.registeredAddress),
+    AuthorizedRepresentative: DEMO_ORGANISATION.authorisedRepresentative,
+  };
+}
 
 /**
  * Add a document to the recorded list, replacing any earlier one of the same
@@ -70,6 +99,23 @@ export function attachmentFieldFrom(uiResources: unknown): string | undefined {
   );
 
   return marker?.[1];
+}
+
+/**
+ * True when Pega refused a submission because it contains a property the
+ * current view does not define.
+ *
+ * Distinct from a validation failure about a *value*: this says the case type
+ * has not caught up with the integration contract, which is a deployment state
+ * rather than a fault in the request.
+ */
+export function isUnsupportedContentFailure(error: unknown): boolean {
+  return (
+    error instanceof PegaIntegrationError &&
+    /Error_Invalid_Inputs_content|invalid inputs/i.test(
+      error.technicalDetail ?? "",
+    )
+  );
 }
 
 /**
@@ -209,25 +255,62 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     request: CreateOnboardingCaseRequest,
   ): Promise<CreateOnboardingCaseResponse> {
     const correlationId = `corr-${randomUUID()}`;
+    const pack = getIndustryPack(request.industryId);
 
-    const { data, eTag } = await this.client.requestWithMeta({
-      method: "POST",
-      path: "/cases",
-      schema: dxCaseResponseSchema,
-      correlationId,
-      // A retried create must never open a second onboarding case.
-      idempotencyKey: correlationId,
-      query: { viewType: "none" },
-      body: {
-        caseTypeID: this.caseTypeId,
-        content: {
-          ProductIntent: request.productCode,
-          Channel: request.channel,
-          // Carries the trace identifier into Pega's own audit trail.
-          SessionContext: correlationId,
-        },
-      },
-    });
+    // The integration contract asks for the industry codes and the
+    // organisation on create. The deployed case type does not expose them
+    // yet, and Pega rejects an entire submission containing a property its
+    // view does not define — so the full payload is attempted first and the
+    // journey falls back to what today's build accepts.
+    const contractContent = {
+      IndustryCode: pack.industryCode,
+      JourneyCode: pack.journeyCode,
+      ProductIntent: pack.brand.productName,
+      Channel: request.channel,
+      Organization: organisationContent(),
+      // Carries the trace identifier into Pega's own audit trail.
+      SessionContext: correlationId,
+    };
+
+    const supportedContent = {
+      ProductIntent: pack.brand.productName,
+      CustomerOnboardingName: DEMO_ORGANISATION.legalName,
+    };
+
+    const createCase = (content: Record<string, unknown>) =>
+      this.client.requestWithMeta({
+        method: "POST",
+        path: "/cases",
+        schema: dxCaseResponseSchema,
+        correlationId,
+        // A retried create must never open a second onboarding case.
+        idempotencyKey: correlationId,
+        query: { viewType: "none" },
+        body: { caseTypeID: this.caseTypeId, content },
+      });
+
+    let data;
+    let eTag;
+
+    try {
+      ({ data, eTag } = await createCase(contractContent));
+    } catch (error) {
+      if (!isUnsupportedContentFailure(error)) {
+        throw error;
+      }
+
+      // Reported rather than swallowed: the demo still runs, but the case
+      // will not carry its industry until Pega deploys the new case type.
+      logServerError(
+        { scope: "pega", caseId: "create", correlationId },
+        new Error(
+          "Pega rejected the contract create payload; falling back to the " +
+            "properties the deployed case type exposes.",
+        ),
+      );
+
+      ({ data, eTag } = await createCase(supportedContent));
+    }
 
     const caseInfo = data.data.caseInfo;
 

@@ -32,7 +32,7 @@ test("happy-path onboarding can complete", async ({ page }) => {
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Use sample documents" }).click();
   await expect(
-    page.getByRole("heading", { name: /Welcome to NorthStar Bank/i }),
+    page.getByRole("heading", { name: /Your account is open/i }),
   ).toBeVisible({
     timeout: 15000,
   });
@@ -106,7 +106,7 @@ test("routine review can be cleared from demo control", async ({ page, context }
   ).toBeVisible({ timeout: 10000 });
   await page.getByRole("button", { name: "Clear review" }).click();
   await expect(
-    customerPage.getByRole("heading", { name: /Welcome to NorthStar Bank/i }),
+    customerPage.getByRole("heading", { name: /Your account is open/i }),
   ).toBeVisible({ timeout: 15000 });
 });
 

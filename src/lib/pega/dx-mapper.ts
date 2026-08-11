@@ -340,11 +340,26 @@ function mapApplicant(caseInfo: DxCaseInfo): OnboardingCaseView["applicant"] {
   const applicant = nestedContent(caseInfo.content, "Applicant");
   const address = nestedContent(caseInfo.content, "Address");
 
-  const storedName =
-    contentString(applicant, "ApplicantName") ??
-    contentString(caseInfo.content, "CustomerOnboardingName");
+  const storedName = contentString(applicant, "ApplicantName");
 
-  if (!storedName) {
+  // A name alone does not mean the customer has given their details. The case
+  // is opened with the organisation's name as its label, and treating that as
+  // a completed form skips the customer straight past the details step.
+  // Both spellings are accepted: the case type is mid-refactor and may return
+  // either, and reading only the new names would make a populated case look
+  // empty during the transition.
+  const hasCapturedDetails = Boolean(
+    contentString(applicant, "DateOfBirth") ??
+      contentString(applicant, "EmailAddress") ??
+      contentString(applicant, "Email") ??
+      contentString(applicant, "MobileNumber") ??
+      contentString(applicant, "Mobile") ??
+      contentString(address, "AddressName") ??
+      contentString(address, "StreetAddress") ??
+      contentString(address, "AddressLine1"),
+  );
+
+  if (!storedName || !hasCapturedDetails) {
     return undefined;
   }
 

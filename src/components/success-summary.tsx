@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { getIndustryPack } from "@/lib/industry/registry";
 import type { OnboardingCaseView } from "@/lib/onboarding/types";
 import { formatDateTime } from "@/lib/onboarding/utils";
 import { CaseReferenceBadge } from "@/components/case-reference-badge";
@@ -10,12 +11,17 @@ export function SuccessSummary({
 }: {
   caseData: OnboardingCaseView;
 }) {
+  const pack = getIndustryPack(caseData.industryId);
+  const { terminology, brand } = pack;
+
   return (
     <Card className="space-y-6">
       <SectionTitle
         eyebrow="Welcome"
-        title={`Welcome to NorthStar Bank, ${caseData.applicant?.firstName || "customer"}.`}
-        description={`Your ${caseData.outcome?.productName || "account"} has been opened successfully.`}
+        title={`${terminology.completionHeading}, ${caseData.applicant?.firstName || terminology.customerNoun}.`}
+        // "opened" for a bank, "issued" for a policy, "activated" for a
+        // service — the same screen has to close three different journeys.
+        description={`Your ${caseData.outcome?.productName || brand.productName} has been ${terminology.activationVerb} successfully.`}
       />
       <div className="grid gap-4 rounded-[28px] bg-[var(--color-surface-soft)] p-5 md:grid-cols-2">
         <CaseReferenceBadge
@@ -23,7 +29,7 @@ export function SuccessSummary({
           value={caseData.outcome?.customerReference || "-"}
         />
         <CaseReferenceBadge
-          label="Account reference"
+          label={`${terminology.productNoun.replace(/^./, (c) => c.toUpperCase())} reference`}
           value={caseData.outcome?.accountReference || "-"}
         />
         <CaseReferenceBadge

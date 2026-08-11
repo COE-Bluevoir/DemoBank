@@ -89,28 +89,37 @@ test("customer completes the journey on AWS without Pega", async ({ page }) => {
     await page.getByRole("button", { name: "Continue" }).click();
   });
 
-  await test.step("upload real identity and proof-of-address files", async () => {
-    const fileInputs = page.locator('input[type="file"]');
-    await expect(fileInputs.first()).toBeAttached({ timeout: 30_000 });
+  await test.step("upload every document this industry asks for", async () => {
+    // The evidence list comes from the industry pack, so the count is not
+    // fixed at two any more. Uploading only the first and last would leave a
+    // banking case short of the documents it requires and stall the journey.
+    await expect(
+      page.locator('input[type="file"]').first(),
+    ).toBeAttached({ timeout: 30_000 });
 
-    await fileInputs.nth(0).setInputFiles({
-      name: "Ananya_Rao_Identity.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from(sampleDocumentPdf("IDENTITY")),
-    });
+    for (let index = 0; ; index += 1) {
+      const remaining = page.locator('input[type="file"]');
 
-    await expect(page.getByText("Ananya_Rao_Identity.pdf")).toBeVisible({
-      timeout: 30_000,
-    });
+      if ((await remaining.count()) === 0) {
+        break;
+      }
 
-    await page
-      .locator('input[type="file"]')
-      .last()
-      .setInputFiles({
-        name: "Ananya_Rao_Utility_Bill.pdf",
+      const before = await remaining.count();
+
+      await remaining.first().setInputFiles({
+        name: `Sunspire_Evidence_${index + 1}.pdf`,
         mimeType: "application/pdf",
-        buffer: Buffer.from(sampleDocumentPdf("ADDRESS")),
+        buffer: Buffer.from(sampleDocumentPdf(index === 0 ? "IDENTITY" : "ADDRESS")),
       });
+
+      // One fewer slot to answer — or none at all, because the final document
+      // completed the evidence and the uploader gave way to the next step.
+      await expect
+        .poll(() => page.locator('input[type="file"]').count(), {
+          timeout: 30_000,
+        })
+        .toBeLessThan(before);
+    }
   });
 
   await test.step("policy holds the case for a human", async () => {
@@ -151,7 +160,7 @@ test("customer completes the journey on AWS without Pega", async ({ page }) => {
     await page.goto(`/onboarding/${encodeURIComponent(caseId)}`);
 
     await expect(
-      page.getByRole("heading", { name: /Welcome to NorthStar Bank/i }),
+      page.getByRole("heading", { name: /Your account is open/i }),
     ).toBeVisible({ timeout: 60_000 });
 
     // A finished journey means a real customer and account reference, not

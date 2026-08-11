@@ -28,6 +28,7 @@ export async function POST(
     const formData = await request.formData();
     const file = formData.get("file");
     const kind = formData.get("kind");
+    const documentCode = formData.get("documentCode");
 
     if (!(file instanceof File) || typeof kind !== "string") {
       return NextResponse.json(
@@ -97,6 +98,12 @@ export async function POST(
     const adapter = getAdapterForCase(caseId);
     const response = await adapter.uploadDocument(caseId, {
       ...payload,
+      // Which requirement this file answers. Absent for callers that predate
+      // the industry document profile, which still upload by evidence class.
+      documentCode:
+        typeof documentCode === "string" && documentCode.length > 0
+          ? documentCode
+          : undefined,
       storageReference: stored.storageKey,
     });
 

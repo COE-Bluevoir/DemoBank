@@ -11,7 +11,9 @@ import { AddressComparison } from "@/components/address-comparison";
 import { CaseReferenceBadge } from "@/components/case-reference-badge";
 import { ConsentCard } from "@/components/consent-card";
 import { CustomerFormSection } from "@/components/customer-form-section";
+import { AlternativeOffer } from "@/components/alternative-offer";
 import { DocumentUploader } from "@/components/document-uploader";
+import type { DocumentRequirement } from "@/lib/industry/types";
 import { ErrorState } from "@/components/error-state";
 import { OnboardingShell } from "@/components/onboarding-shell";
 import { SuccessSummary } from "@/components/success-summary";
@@ -219,7 +221,9 @@ export function OnboardingFlow({
     await submitAction(actionId);
   }
 
-  async function uploadFile(kind: DocumentKind, file: File) {
+  async function uploadFile(requirement: DocumentRequirement, file: File) {
+    const kind = requirement.kind;
+
     if (file.size > 5 * 1024 * 1024) {
       setError("Document too large. Keep each upload under 5 MB.");
       return;
@@ -232,6 +236,7 @@ export function OnboardingFlow({
     try {
       const formData = new FormData();
       formData.set("kind", kind);
+      formData.set("documentCode", requirement.code);
       formData.set("file", file);
 
       const response = await fetch(`/api/onboarding/cases/${encodeURIComponent(caseData.caseId)}/documents`, {
@@ -311,6 +316,7 @@ export function OnboardingFlow({
     if (caseData.status === "DOCUMENTS_REQUIRED") {
       return (
         <DocumentUploader
+          pack={pack}
           documents={caseData.documents || []}
           uploading={uploading}
           busy={busy}
@@ -333,6 +339,21 @@ export function OnboardingFlow({
       caseData.status === "CREATING_CUSTOMER"
     ) {
       return <VerificationProgress status={caseData.status} />;
+    }
+
+    // A commercial alternative and an address mismatch both park the case at
+    // the same status, but they ask the customer different questions.
+    if (
+      caseData.status === "ADDRESS_CONFIRMATION_REQUIRED" &&
+      caseData.pendingChoice
+    ) {
+      return (
+        <AlternativeOffer
+          caseData={caseData}
+          busy={busy}
+          onAccept={() => submitAction("ACCEPT_ALTERNATIVE")}
+        />
+      );
     }
 
     if (caseData.status === "ADDRESS_CONFIRMATION_REQUIRED") {
