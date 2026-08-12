@@ -197,6 +197,45 @@ describe("insurance storyline", () => {
   });
 });
 
+describe("the customer is always asked for evidence", () => {
+  it.each(["banking", "insurance", "telecom"] as const)(
+    "%s stops at the document step after consent",
+    async (industryId) => {
+      // The orchestration is free to run ahead internally, but the customer
+      // must be asked for their evidence. A journey that goes from consent
+      // straight to "being verified" has verified nothing.
+      const { view } = await openCase(industryId);
+
+      expect(view.status).toBe("DOCUMENTS_REQUIRED");
+      expect(view.outcome).toBeUndefined();
+    },
+  );
+
+  it.each(["banking", "insurance", "telecom"] as const)(
+    "%s does not advance until every required document is in",
+    async (industryId) => {
+      const { adapter, caseId } = await openCase(industryId);
+      const profile = getIndustryPack(industryId).documentProfile.filter(
+        (item) => item.mandatory,
+      );
+
+      // Everything but the last mandatory document.
+      for (const requirement of profile.slice(0, -1)) {
+        await adapter.uploadDocument(caseId, {
+          kind: requirement.kind,
+          documentCode: requirement.code,
+          fileName: `${requirement.code}.png`,
+          fileType: "image/png",
+          fileSize: 1024,
+          source: "demo",
+        });
+      }
+
+      expect((await adapter.getCase(caseId)).status).toBe("DOCUMENTS_REQUIRED");
+    },
+  );
+});
+
 describe("multi-document journeys", () => {
   it("keeps every document, not just one per evidence class", async () => {
     // Banking asks for four documents and three of them are identity

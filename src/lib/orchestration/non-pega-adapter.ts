@@ -377,10 +377,16 @@ export class NonPegaOrchestrationAdapter
    */
   private async runVerification(record: NonPegaCase): Promise<void> {
     const pack = getIndustryPack(record.industryId);
-    const required = pack.requiredDocuments.map((item) => item.kind);
-    const present = record.documents.map((item) => item.kind);
+    // Gate on the evidence the journey asks for, by document rather than by
+    // class. The old two-entry list let a four-document journey proceed once
+    // any identity and any address document had arrived, so the case advanced
+    // while the page still showed unanswered slots.
+    const required = pack.documentProfile.filter((item) => item.mandatory);
+    const present = new Set(
+      record.documents.map((item) => item.documentCode ?? item.kind),
+    );
 
-    if (required.some((kind) => !present.includes(kind))) {
+    if (required.some((item) => !present.has(item.code))) {
       setStatus(record, "DOCUMENTS_REQUIRED");
       return;
     }
@@ -510,8 +516,10 @@ export class NonPegaOrchestrationAdapter
     const verdict = evaluatePolicy({
       hasApplicant: Boolean(applicant),
       hasConsent: Boolean(record.consent),
-      documentKinds: present,
-      requiredDocumentKinds: required,
+      // The policy engine reasons in evidence classes; the gate above reasons
+      // in documents. Both views of the same set.
+      documentKinds: record.documents.map((item) => item.kind),
+      requiredDocumentKinds: required.map((item) => item.kind),
       documentDiscrepancies: (documentFinding?.discrepancies ?? []).map(
         (item) => ({
           field: item.field,

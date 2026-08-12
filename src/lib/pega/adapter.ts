@@ -386,7 +386,11 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     // screen waiting. The attachment path finds its own step, or keeps the
     // evidence on the case until one opens.
     if (request.actionId === "USE_DEMO_DOCUMENTS") {
-      state.collected = { ...state.collected, documentsProvided: true };
+      state.collected = {
+        ...state.collected,
+        documentsProvided: true,
+        awaitingDocumentUpload: false,
+      };
       await saveState(caseId, state);
       return this.attachSampleDocuments(caseId);
     }
@@ -494,6 +498,23 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     );
 
     const updated = await loadState(caseId);
+
+    // Hold the customer at the document step until they have actually
+    // provided evidence.
+    //
+    // Pega's flow no longer stops for documents — it accepts the details and
+    // runs ahead to its own extraction step — so without this the customer is
+    // never asked for anything and the journey jumps from consent to "being
+    // verified" with no evidence behind it. The case has still moved in Pega;
+    // this governs what the customer is asked for, and the files are handed
+    // over as soon as they give them.
+    if (
+      updated.collected.accepted === true &&
+      updated.collected.documentsProvided !== true
+    ) {
+      updated.collected.awaitingDocumentUpload = true;
+      await saveState(caseId, updated);
+    }
 
     return mapDxCaseToView(caseInfoAfter, {
       scenarioId: updated.scenarioId,
@@ -639,6 +660,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     // upload gate for the assignment waiting on one.
     const uploadState = await loadState(caseId);
     uploadState.collected.documentsProvided = true;
+    uploadState.collected.awaitingDocumentUpload = false;
     // Pega's case content does not carry the file until later in its own
     // flow, so what the customer uploaded is recorded here — otherwise they
     // upload a document and the page shows nothing back.
