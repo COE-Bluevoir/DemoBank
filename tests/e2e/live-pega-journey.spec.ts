@@ -69,8 +69,8 @@ test("customer completes the Everyday Plus journey with every field filled", asy
     await selectScenario(page, "ADDRESS_PEP_REVIEW");
   });
 
-  await test.step("choose Pega on the switch and start", async () => {
-    await page.goto("/onboarding/start");
+  await test.step("choose Pega in the accelerator and start", async () => {
+    await page.goto("/accelerator");
 
     const pegaOption = page.getByRole("radio", { name: "Pega", exact: true });
     await expect(pegaOption).toBeVisible({ timeout: 30_000 });
@@ -80,6 +80,11 @@ test("customer completes the Everyday Plus journey with every field filled", asy
     ).toBeEnabled();
 
     await pegaOption.check();
+
+    await page.getByRole("link", { name: /Banking/ }).first().click();
+    // The industry page links into the journey; the start page then has a
+    // button of the same name.
+    await page.getByRole("link", { name: /Begin application/i }).first().click();
     await page.getByRole("button", { name: "Begin application" }).click();
 
     // Pega mints its own case IDs; the mock engine uses ONB-NNNNN and AWS uses

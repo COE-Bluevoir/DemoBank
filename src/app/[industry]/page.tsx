@@ -34,10 +34,15 @@ export async function generateMetadata({
  */
 export default async function IndustryHomePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ industry: string }>;
+  searchParams: Promise<{ mode?: string }>;
 }) {
   const { industry } = await params;
+  // Carried from the accelerator so the journey opens on the system the
+  // presenter selected, without that choice becoming shared server state.
+  const { mode } = await searchParams;
 
   // Unknown segments must 404 rather than silently rendering the reference
   // industry, otherwise every mistyped URL looks like a working page.
@@ -96,7 +101,9 @@ export default async function IndustryHomePage({
               </ul>
 
               <Link
-                href={`/onboarding/start?industry=${pack.id}`}
+                href={`/onboarding/start?industry=${pack.id}${
+                  mode ? `&mode=${encodeURIComponent(mode)}` : ""
+                }`}
                 className="inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
                 style={{ backgroundColor: pack.brand.accent }}
               >

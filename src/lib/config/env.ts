@@ -95,6 +95,19 @@ const envSchema = z.object({
    * `bedrock` uses real inference. The contracts are identical either way.
    */
   AGENT_PROVIDER: z.enum(["deterministic", "bedrock"]).optional().default("deterministic"),
+  /**
+   * Which system answers the conversational assistant.
+   *
+   * Separate from the orchestration mode on purpose: answering a question and
+   * running the workflow are different responsibilities, and one should not
+   * silently change when the other is switched.
+   */
+  ASSISTANT_PROVIDER: z
+    .enum(["onboarding-guide", "pega"])
+    .optional()
+    .default("onboarding-guide"),
+  /** Pega's conversational endpoint. Required only when Pega answers. */
+  PEGA_ASSISTANT_URL: z.string().url().optional(),
   BEDROCK_REGION: z.string().min(1).optional(),
   /** Routing and classification. Cheap model, high call volume. */
   BEDROCK_MODEL_ID: z.string().min(1).optional().default("amazon.nova-2-lite-v1:0"),
@@ -139,6 +152,8 @@ export interface ServerConfig {
   defaultScenarioId: RawServerEnv["DEMO_SCENARIO"];
   demoControlEnabled: boolean;
   demoControlPasscode: string;
+  assistantProvider: RawServerEnv["ASSISTANT_PROVIDER"];
+  pegaAssistantUrl?: string;
   serviceApiKey?: string;
   documentStorageDir?: string;
   storageDriver: RawServerEnv["STORAGE_DRIVER"];
@@ -240,6 +255,8 @@ function loadConfig(source: EnvSource): ServerConfig {
     defaultScenarioId: env.DEMO_SCENARIO,
     demoControlEnabled: env.DEMO_CONTROL_ENABLED,
     demoControlPasscode: env.DEMO_CONTROL_PASSCODE,
+    assistantProvider: env.ASSISTANT_PROVIDER,
+    pegaAssistantUrl: env.PEGA_ASSISTANT_URL,
     serviceApiKey: env.SERVICE_API_KEY,
     documentStorageDir: env.DOCUMENT_STORAGE_DIR,
     storageDriver: env.STORAGE_DRIVER,

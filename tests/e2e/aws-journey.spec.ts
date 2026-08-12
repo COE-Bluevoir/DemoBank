@@ -35,14 +35,20 @@ test.setTimeout(180_000);
 test("customer completes the journey on AWS without Pega", async ({ page }) => {
   let caseId = "";
 
-  await test.step("choose AWS on the switch", async () => {
-    await page.goto("/onboarding/start");
+  await test.step("choose AWS in the accelerator, then start", async () => {
+    // The orchestration is selected in the launcher, not on the bank's own
+    // site: a customer opening an account never picks an engine.
+    await page.goto("/accelerator");
 
     const awsOption = page.getByRole("radio", { name: "AWS", exact: true });
     await expect(awsOption).toBeVisible({ timeout: 30_000 });
     await awsOption.check();
     await expect(awsOption).toBeChecked();
 
+    await page.getByRole("link", { name: /Banking/ }).first().click();
+    // The industry page links into the journey; the start page then has a
+    // button of the same name.
+    await page.getByRole("link", { name: /Begin application/i }).first().click();
     await page.getByRole("button", { name: "Begin application" }).click();
   });
 

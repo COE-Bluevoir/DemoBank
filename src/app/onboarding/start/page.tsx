@@ -1,13 +1,9 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useState } from "react";
 
 import { BankHeader } from "@/components/bank-header";
-import {
-  OrchestrationSwitch,
-  type OrchestrationChoice,
-} from "@/components/orchestration-switch";
 import { Button, Card, SectionTitle } from "@/components/ui";
 import { resolveIndustryPack } from "@/lib/industry/registry";
 import type { OrchestrationMode } from "@/lib/onboarding/types";
@@ -20,51 +16,16 @@ function OnboardingStartExperience() {
   const pack = resolveIndustryPack(searchParams.get("industry") ?? undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [choices, setChoices] = useState<OrchestrationChoice[]>([]);
-  const [mode, setMode] = useState<OrchestrationMode | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadChoices() {
-      try {
-        const response = await fetch("/api/orchestration/options");
-
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = await response.json();
-
-        if (cancelled) {
-          return;
-        }
-
-        setChoices(payload.options);
-
-        // Prefer the configured default, but never preselect something this
-        // environment cannot run — that would fail only after the customer
-        // committed to starting.
-        const available = payload.options.filter(
-          (option: OrchestrationChoice) => !option.unavailableReason,
-        );
-        const preferred =
-          available.find(
-            (option: OrchestrationChoice) => option.id === payload.activeMode,
-          ) ?? available[0];
-
-        setMode(preferred?.id ?? null);
-      } catch {
-        // The switch is an enhancement; the journey still starts without it.
-      }
-    }
-
-    loadChoices();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // The orchestration is chosen in the accelerator and arrives in the URL. A
+  // customer opening an account never picks an engine, so there is no control
+  // for it here — only the choice already made.
+  const requestedMode = searchParams.get("mode");
+  const mode: OrchestrationMode | null =
+    requestedMode === "pega" ||
+    requestedMode === "non-pega" ||
+    requestedMode === "mock-pega"
+      ? requestedMode
+      : null;
 
   async function startJourney() {
     setBusy(true);
@@ -138,16 +99,6 @@ function OnboardingStartExperience() {
                 salary credits, digital payments and everyday banking. Would you
                 like to review the account details or begin your application?
               </div>
-              {choices.length > 0 && mode ? (
-                <div className="rounded-[24px] bg-white p-5">
-                  <OrchestrationSwitch
-                    choices={choices}
-                    value={mode}
-                    onChange={setMode}
-                    disabled={busy}
-                  />
-                </div>
-              ) : null}
               <div className="flex flex-wrap gap-3">
                 <Button type="button" disabled={busy} onClick={startJourney}>
                   Begin application
