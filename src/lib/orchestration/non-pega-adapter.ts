@@ -262,17 +262,21 @@ export class NonPegaOrchestrationAdapter
       }
 
       case "USE_DEMO_DOCUMENTS": {
+        // Every document the journey asks for, not one per evidence class:
+        // the shortcut must satisfy the same gate a real customer does, or it
+        // leaves the case stuck on a screen the presenter has already passed.
         for (const document of getIndustryPack(record.industryId)
-          .requiredDocuments) {
+          .documentProfile) {
           record.documents.push({
-            documentId: `${record.caseId}-${document.kind}`,
+            documentId: `${record.caseId}-${document.code}`,
+            documentCode: document.code,
             kind: document.kind,
-            fileName: `Sample_${document.kind}.pdf`,
+            fileName: `Sample_${document.code}.pdf`,
             fileType: "application/pdf",
             fileSize: 1024,
             status: "UPLOADED",
             source: "demo",
-            evidenceReference: `${record.caseId}-EV-${document.kind}`,
+            evidenceReference: `${record.caseId}-EV-${document.code}`,
           });
         }
         await this.runVerification(record);
