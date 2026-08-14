@@ -28,6 +28,8 @@ const requestSchema = z.object({
     // Bounded so a long conversation cannot grow the request without limit.
     .max(20)
     .default([]),
+  /** Echoed back from a prior reply, for providers with server-side memory. */
+  conversationId: z.string().max(200).optional(),
 });
 
 export async function POST(request: Request) {
@@ -60,6 +62,7 @@ export async function POST(request: Request) {
         suggestions: reply.suggestions ?? [],
         source: reply.source,
         confidence: reply.confidence,
+        conversationId: reply.conversationId,
       },
       { headers: { "Cache-Control": "no-store" } },
     );

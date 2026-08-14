@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { sampleDocumentPdf } from "@/lib/pega/sample-documents";
+import { bankingPack } from "@/lib/industry/packs/banking";
+import {
+  sampleDocumentBytes,
+  sampleDocumentContentType,
+} from "@/lib/pega/sample-documents";
 
 import { unlockDemoControl } from "./demo-control";
 
@@ -111,11 +115,12 @@ test("customer completes the journey on AWS without Pega", async ({ page }) => {
       }
 
       const before = await remaining.count();
+      const requirement = bankingPack.documentProfile.filter((item) => item.mandatory)[index];
 
       await remaining.first().setInputFiles({
-        name: `Sunspire_Evidence_${index + 1}.pdf`,
-        mimeType: "application/pdf",
-        buffer: Buffer.from(sampleDocumentPdf(index === 0 ? "IDENTITY" : "ADDRESS")),
+        name: requirement.sampleFile,
+        mimeType: sampleDocumentContentType(requirement),
+        buffer: Buffer.from(await sampleDocumentBytes(requirement)),
       });
 
       // One fewer slot to answer — or none at all, because the final document

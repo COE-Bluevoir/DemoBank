@@ -20,6 +20,7 @@ export const insurancePack: IndustryPack = {
       label: "Certificate of incorporation",
       description: "Confirms the company exists and states its registered office.",
       mandatory: true,
+      sampleFile: "D01_company_incorporation_certificate.png",
     },
     {
       code: "REPRESENTATIVE_ID",
@@ -27,6 +28,16 @@ export const insurancePack: IndustryPack = {
       label: "Authorised signatory identity",
       description: "Identity evidence for the person authorising the proposal.",
       mandatory: true,
+      sampleFile: "D02_authorized_signatory_sample_id.png",
+    },
+    {
+      code: "AUTHORIZATION_LETTER",
+      kind: "IDENTITY",
+      label: "Board resolution",
+      description:
+        "Confirms the signatory is authorised to procure this policy on the company's behalf.",
+      mandatory: true,
+      sampleFile: "D04_board_resolution_authorized_signatory.png",
     },
     {
       code: "PROPOSAL_FORM",
@@ -34,6 +45,7 @@ export const insurancePack: IndustryPack = {
       label: "Commercial insurance proposal",
       description: "States the risk location and the protections in place.",
       mandatory: true,
+      sampleFile: "I03_commercial_insurance_proposal_form.png",
     },
     {
       code: "RISK_QUESTIONNAIRE",
@@ -42,6 +54,7 @@ export const insurancePack: IndustryPack = {
       description:
         "The surveyor's record of the same premises, used to corroborate the proposal.",
       mandatory: true,
+      sampleFile: "I04_fire_risk_questionnaire_conflict.png",
     },
     {
       code: "PROPERTY_SCHEDULE",
@@ -49,6 +62,7 @@ export const insurancePack: IndustryPack = {
       label: "Property schedule",
       description: "Contents and values for the premises being insured.",
       mandatory: false,
+      sampleFile: "I05_property_schedule.png",
     },
   ],
 

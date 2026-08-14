@@ -80,6 +80,36 @@ export const EXPECTED_EXTRACTIONS: Record<string, ExpectedExtraction> = {
     overallConfidence: 0.98,
   },
 
+  /**
+   * Evidences the representative's authority to act for the organisation.
+   * Shared across all three industries — the resolution itself names banking,
+   * insurance and telecom in the same clause.
+   */
+  AUTHORIZATION_LETTER: {
+    documentCode: "AUTHORIZATION_LETTER",
+    label: "Certified board resolution",
+    fields: {
+      "Company Name": "Sunspire Retail Private Limited",
+      CIN: "U52399KA2021PTC148275",
+      "Authorised Signatory": "Arjun Mehta",
+      Designation: "Chief Operating Officer",
+      "Authorised For":
+        "Business banking, commercial insurance, telecom/connectivity services",
+      "Resolution Date": "12 June 2026",
+      "Resolution Reference": "SRPL/BR/2026/0612",
+    },
+    fieldConfidence: {
+      "Company Name": 0.99,
+      CIN: 0.98,
+      "Authorised Signatory": 0.99,
+      Designation: 0.97,
+      "Authorised For": 0.94,
+      "Resolution Date": 0.97,
+      "Resolution Reference": 0.97,
+    },
+    overallConfidence: 0.97,
+  },
+
   TAX_REGISTRATION: {
     documentCode: "TAX_REGISTRATION",
     label: "GST Registration Certificate",

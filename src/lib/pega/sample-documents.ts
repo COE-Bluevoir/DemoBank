@@ -1,175 +1,46 @@
-/**
- * Sample identity documents for the demo path.
- *
- * These are generated as genuine, well-formed PDFs rather than placeholder
- * bytes: Pega stores and renders them, and a malformed file fails in ways that
- * look like an integration bug. Every one is stamped SPECIMEN and carries
- * obviously invalid numbers so it cannot be mistaken for a real document.
- */
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
-export type SampleDocumentKind = "IDENTITY" | "ADDRESS";
-
-interface DocumentField {
-  label: string;
-  value: string;
-}
+import type { DocumentRequirement } from "@/lib/industry/types";
 
 /**
- * Details differ between the two documents on purpose.
+ * Sample evidence for the demo path.
  *
- * The address on the proof-of-address deliberately does not match the address
- * on the identity document, so the journey exercises its discrepancy path
- * instead of only ever seeing a clean case.
+ * These are the real synthetic documents under `public/sample-docs/` — the
+ * same files a presenter uploads by hand, and the ones `EXPECTED_EXTRACTIONS`
+ * is ground truth for. The "Use sample documents" shortcut must hand Pega the
+ * same evidence a manual upload would, not a placeholder, or the extraction
+ * and screening steps downstream have nothing real to work from.
  */
-const SPECIMENS: Record<
-  SampleDocumentKind,
-  { title: string; subtitle: string; fields: DocumentField[] }
-> = {
-  IDENTITY: {
-    title: "AADHAAR",
-    subtitle: "Unique Identification Authority of India",
-    fields: [
-      { label: "Name", value: "Avery Thompson" },
-      { label: "Date of Birth", value: "17/04/1988" },
-      { label: "Gender", value: "Female" },
-      { label: "Aadhaar Number", value: "0000 0000 0000" },
-      { label: "Address", value: "18 Lake View Road, San Francisco" },
-      { label: "Issued", value: "12/03/2019" },
-    ],
-  },
-  ADDRESS: {
-    title: "AADHAAR",
-    subtitle: "Unique Identification Authority of India",
-    fields: [
-      { label: "Name", value: "Avery Thompson" },
-      { label: "Date of Birth", value: "17/04/1988" },
-      { label: "Gender", value: "Female" },
-      { label: "Aadhaar Number", value: "0000 0000 0000" },
-      { label: "Address", value: "81 Lake View Road, San Francisco" },
-      { label: "Issued", value: "04/09/2023" },
-    ],
-  },
-};
 
-/** Escape the characters that terminate or nest a PDF string literal. */
-function escapePdfText(value: string): string {
-  return value.replace(/([\\()])/g, "\\$1");
-}
+const SAMPLE_DOCS_DIR = path.join(process.cwd(), "public", "sample-docs");
 
-interface TextLine {
-  text: string;
-  x: number;
-  y: number;
-  size: number;
-  bold: boolean;
-}
+const cache = new Map<string, Uint8Array>();
 
-function layout(kind: SampleDocumentKind): TextLine[] {
-  const specimen = SPECIMENS[kind];
-  const lines: TextLine[] = [
-    { text: specimen.title, x: 60, y: 300, size: 22, bold: true },
-    { text: specimen.subtitle, x: 60, y: 278, size: 9, bold: false },
-    {
-      text: kind === "IDENTITY" ? "Proof of Identity" : "Proof of Address",
-      x: 60,
-      y: 256,
-      size: 11,
-      bold: true,
-    },
-  ];
-
-  specimen.fields.forEach((field, index) => {
-    const y = 224 - index * 22;
-    lines.push({ text: `${field.label}:`, x: 60, y, size: 10, bold: true });
-    lines.push({ text: field.value, x: 190, y, size: 10, bold: false });
-  });
-
-  lines.push({
-    text: "SPECIMEN - NOT A VALID DOCUMENT - GENERATED FOR DEMONSTRATION",
-    x: 60,
-    y: 60,
-    size: 9,
-    bold: true,
-  });
-
-  return lines;
-}
-
-function contentStream(kind: SampleDocumentKind): string {
-  const border = "0.4 w 0.2 0.2 0.2 RG 40 40 majorBoxWidth majorBoxHeight re S"
-    .replace("majorBoxWidth", "440")
-    .replace("majorBoxHeight", "300");
-
-  const text = layout(kind)
-    .map(
-      (line) =>
-        `BT /${line.bold ? "F2" : "F1"} ${line.size} Tf ${line.x} ${line.y} Td (${escapePdfText(line.text)}) Tj ET`,
-    )
-    .join("\n");
-
-  return `${border}\n${text}\n`;
-}
-
-/**
- * Assemble a single-page PDF.
- *
- * The cross-reference table stores each object's byte offset, so the file is
- * built up while measuring as it goes — computing offsets after the fact is
- * where hand-written PDFs usually break.
- */
-function buildPdf(kind: SampleDocumentKind): Uint8Array {
-  const stream = contentStream(kind);
-
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 520 380] " +
-      "/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>",
-    `<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
-  ];
-
-  let pdf = "%PDF-1.4\n";
-  const offsets: number[] = [];
-
-  objects.forEach((body, index) => {
-    offsets.push(Buffer.byteLength(pdf, "latin1"));
-    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
-  });
-
-  const startXref = Buffer.byteLength(pdf, "latin1");
-
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets) {
-    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
-  }
-
-  pdf +=
-    `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n` +
-    `startxref\n${startXref}\n%%EOF\n`;
-
-  return new Uint8Array(Buffer.from(pdf, "latin1"));
-}
-
-const cache = new Map<SampleDocumentKind, Uint8Array>();
-
-/** A valid, clearly-marked specimen PDF for the given document kind. */
-export function sampleDocumentPdf(kind: SampleDocumentKind): Uint8Array {
-  const cached = cache.get(kind);
+/** The bytes of a requirement's sample file, read once and cached. */
+export async function sampleDocumentBytes(
+  requirement: DocumentRequirement,
+): Promise<Uint8Array> {
+  const cached = cache.get(requirement.sampleFile);
 
   if (cached) {
-    // Copy so a caller cannot mutate the shared buffer.
     return Uint8Array.from(cached);
   }
 
-  const built = buildPdf(kind);
-  cache.set(kind, built);
+  const filePath = path.join(SAMPLE_DOCS_DIR, requirement.sampleFile);
+  const buffer = await readFile(filePath);
+  const bytes = new Uint8Array(buffer);
 
-  return Uint8Array.from(built);
+  cache.set(requirement.sampleFile, bytes);
+
+  return Uint8Array.from(bytes);
 }
 
-export const SAMPLE_DOCUMENT_FILE_NAMES: Record<SampleDocumentKind, string> = {
-  IDENTITY: "Aadhaar_Identity_Specimen.pdf",
-  ADDRESS: "Aadhaar_Address_Specimen.pdf",
-};
+/** Content type for a requirement's sample file, from its extension. */
+export function sampleDocumentContentType(
+  requirement: DocumentRequirement,
+): string {
+  return requirement.sampleFile.toLowerCase().endsWith(".pdf")
+    ? "application/pdf"
+    : "image/png";
+}

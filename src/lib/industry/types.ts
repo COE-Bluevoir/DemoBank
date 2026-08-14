@@ -43,6 +43,12 @@ export interface DocumentRequirement {
   kind: DocumentKind;
   /** False for evidence that is useful but not required to proceed. */
   mandatory: boolean;
+  /**
+   * Filename under `public/sample-docs/` used by the "Use sample documents"
+   * shortcut and by the presenter's demo-document path. Matches the ground
+   * truth in `EXPECTED_EXTRACTIONS` keyed by this requirement's `code`.
+   */
+  sampleFile: string;
 }
 
 /**

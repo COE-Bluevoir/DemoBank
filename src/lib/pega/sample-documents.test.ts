@@ -1,73 +1,44 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 
+import { bankingPack } from "@/lib/industry/packs/banking";
+import { insurancePack } from "@/lib/industry/packs/insurance";
+import { telecomPack } from "@/lib/industry/packs/telecom";
 import {
-  SAMPLE_DOCUMENT_FILE_NAMES,
-  sampleDocumentPdf,
+  sampleDocumentBytes,
+  sampleDocumentContentType,
 } from "@/lib/pega/sample-documents";
 
 /**
- * Pega stores and renders these files, so a malformed PDF fails as an opaque
- * upload error rather than as a bad file. The structure is asserted here
- * because that failure is expensive to diagnose from the other end.
+ * Every requirement's `sampleFile` must resolve to a real, non-empty asset
+ * under `public/sample-docs/` — a typo here fails silently as a missing
+ * upload rather than a build error, so it is asserted for every pack.
  */
 
-function asText(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("latin1");
-}
+const PACKS = [bankingPack, insurancePack, telecomPack];
 
 describe("sample documents", () => {
-  it.each(["IDENTITY", "ADDRESS"] as const)(
-    "%s is a structurally valid PDF",
-    (kind) => {
-      const text = asText(sampleDocumentPdf(kind));
+  it.each(PACKS.flatMap((pack) => pack.documentProfile.map((requirement) => [pack.id, requirement] as const)))(
+    "%s/%s reads a non-empty PNG",
+    async (_packId, requirement) => {
+      const bytes = await sampleDocumentBytes(requirement);
 
-      expect(text.startsWith("%PDF-")).toBe(true);
-      expect(text.trimEnd().endsWith("%%EOF")).toBe(true);
-      expect(text).toContain("/Root");
-
-      const startXref = Number(/startxref\s+(\d+)/.exec(text)?.[1]);
-      expect(text.slice(startXref, startXref + 4)).toBe("xref");
-
-      // Every cross-reference offset must land on its object header. This is
-      // where hand-assembled PDFs usually break, and readers reject the file.
-      const offsets = [...text.slice(startXref).matchAll(/^(\d{10}) 00000 n/gm)]
-        .map((match) => Number(match[1]));
-
-      expect(offsets).toHaveLength(6);
-      offsets.forEach((offset, index) => {
-        expect(text.slice(offset)).toMatch(new RegExp(`^${index + 1} 0 obj`));
-      });
+      expect(bytes.byteLength).toBeGreaterThan(0);
+      // PNG signature.
+      expect(Array.from(bytes.slice(0, 8))).toEqual([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      ]);
+      expect(sampleDocumentContentType(requirement)).toBe("image/png");
     },
   );
 
-  it("marks both documents as specimens", () => {
-    for (const kind of ["IDENTITY", "ADDRESS"] as const) {
-      expect(asText(sampleDocumentPdf(kind))).toContain(
-        "SPECIMEN - NOT A VALID DOCUMENT",
-      );
-    }
-  });
-
-  it("gives the two documents different addresses", () => {
-    // The proof of address deliberately disagrees with the identity document
-    // so the journey exercises its discrepancy path rather than only ever
-    // seeing a clean case.
-    const identity = asText(sampleDocumentPdf("IDENTITY"));
-    const address = asText(sampleDocumentPdf("ADDRESS"));
-
-    expect(identity).toContain("18 Lake View Road");
-    expect(address).toContain("81 Lake View Road");
-    expect(identity).not.toEqual(address);
-    expect(SAMPLE_DOCUMENT_FILE_NAMES.IDENTITY).not.toEqual(
-      SAMPLE_DOCUMENT_FILE_NAMES.ADDRESS,
-    );
-  });
-
-  it("does not hand out a buffer callers can mutate", () => {
-    const first = sampleDocumentPdf("IDENTITY");
+  it("does not hand out a buffer callers can mutate", async () => {
+    const requirement = bankingPack.documentProfile[0];
+    const first = await sampleDocumentBytes(requirement);
+    const originalFirstByte = first[0];
     first[0] = 0;
 
-    expect(sampleDocumentPdf("IDENTITY")[0]).toBe("%".charCodeAt(0));
+    const second = await sampleDocumentBytes(requirement);
+    expect(second[0]).toBe(originalFirstByte);
   });
 });

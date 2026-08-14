@@ -50,6 +50,10 @@ export class PegaAssistantProvider implements AssistantProvider {
         industryCode: request.industryId.toUpperCase(),
         message: request.message,
         history: request.history,
+        // Pega's agent keeps its own conversation memory server-side rather
+        // than replaying history; this is what resumes it. Empty string on
+        // the first turn, exactly as the agent's session API expects.
+        conversationId: request.conversationId ?? "",
         schemaVersion: "1.0",
       }),
     });
@@ -64,6 +68,7 @@ export class PegaAssistantProvider implements AssistantProvider {
       message?: string;
       suggestions?: Array<{ label: string; href: string }>;
       confidence?: number;
+      conversationId?: string;
     };
 
     if (typeof payload.message !== "string" || payload.message.length === 0) {
@@ -76,6 +81,11 @@ export class PegaAssistantProvider implements AssistantProvider {
       message: payload.message,
       suggestions: payload.suggestions,
       confidence: payload.confidence,
+      // Absent (rather than falling back to the request's) when Pega does
+      // not return one, e.g. on a turn where the agent's tool declines to
+      // start a new session — carrying forward a stale ID would resume the
+      // wrong conversation on the next turn.
+      conversationId: payload.conversationId || undefined,
       source: "pega",
     };
   }

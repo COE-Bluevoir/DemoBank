@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { sampleDocumentPdf } from "@/lib/pega/sample-documents";
+import { bankingPack } from "@/lib/industry/packs/banking";
+import {
+  sampleDocumentBytes,
+  sampleDocumentContentType,
+} from "@/lib/pega/sample-documents";
 
 import { selectScenario, unlockDemoControl } from "./demo-control";
 
@@ -40,17 +44,10 @@ const APPLICANT = {
   taxResidency: "India",
 } as const;
 
-/**
- * A genuinely well-formed PDF.
- *
- * A stub that only satisfies magic-byte validation is not enough: Pega parses
- * the file during its document steps and rejects a malformed one with a
- * generic "invalid input parameters", which reads like an integration fault
- * rather than a bad fixture.
- */
-function pdfFixture(kind: "IDENTITY" | "ADDRESS"): Buffer {
-  return Buffer.from(sampleDocumentPdf(kind));
-}
+/** The mandatory documents this journey asks for, in upload order. */
+const REQUIRED_DOCUMENTS = bankingPack.documentProfile.filter(
+  (item) => item.mandatory,
+);
 
 // Live Pega round trips are slower than the in-process mock.
 test.setTimeout(240_000);
@@ -172,10 +169,12 @@ test("customer completes the Everyday Plus journey with every field filled", asy
         break;
       }
 
+      const requirement = REQUIRED_DOCUMENTS[index] ?? REQUIRED_DOCUMENTS.at(-1)!;
+
       await remaining.first().setInputFiles({
-        name: `Sunspire_Evidence_${index + 1}.pdf`,
-        mimeType: "application/pdf",
-        buffer: pdfFixture(index === 0 ? "IDENTITY" : "ADDRESS"),
+        name: requirement.sampleFile,
+        mimeType: sampleDocumentContentType(requirement),
+        buffer: Buffer.from(await sampleDocumentBytes(requirement)),
       });
 
       // Pega refusing its own document step is a known gap on their side, so

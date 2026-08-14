@@ -25,6 +25,7 @@ export const bankingPack: IndustryPack = {
       description:
         "Confirms the company exists and states its registered office.",
       mandatory: true,
+      sampleFile: "D01_company_incorporation_certificate.png",
     },
     {
       code: "REPRESENTATIVE_ID",
@@ -33,6 +34,16 @@ export const bankingPack: IndustryPack = {
       description:
         "Identity evidence for the person authorised to open the account.",
       mandatory: true,
+      sampleFile: "D02_authorized_signatory_sample_id.png",
+    },
+    {
+      code: "AUTHORIZATION_LETTER",
+      kind: "IDENTITY",
+      label: "Board resolution",
+      description:
+        "Confirms the signatory is authorised to open the account on the company's behalf.",
+      mandatory: true,
+      sampleFile: "D04_board_resolution_authorized_signatory.png",
     },
     {
       code: "TAX_REGISTRATION",
@@ -40,6 +51,7 @@ export const bankingPack: IndustryPack = {
       label: "Tax registration certificate",
       description: "GST registration for the business.",
       mandatory: true,
+      sampleFile: "D03_tax_registration_certificate.png",
     },
     {
       code: "ADDRESS_PROOF",
@@ -48,6 +60,7 @@ export const bankingPack: IndustryPack = {
       description:
         "A recent utility or telephone bill showing the business address.",
       mandatory: true,
+      sampleFile: "B04_telephone_bill_address_mismatch.png",
     },
   ],
 

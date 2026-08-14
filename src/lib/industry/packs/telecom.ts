@@ -20,6 +20,7 @@ export const telecomPack: IndustryPack = {
       label: "Certificate of incorporation",
       description: "Confirms the company exists and states its registered office.",
       mandatory: true,
+      sampleFile: "D01_company_incorporation_certificate.png",
     },
     {
       code: "REPRESENTATIVE_ID",
@@ -27,6 +28,16 @@ export const telecomPack: IndustryPack = {
       label: "Authorised signatory identity",
       description: "Identity evidence for the person authorising the order.",
       mandatory: true,
+      sampleFile: "D02_authorized_signatory_sample_id.png",
+    },
+    {
+      code: "AUTHORIZATION_LETTER",
+      kind: "IDENTITY",
+      label: "Board resolution",
+      description:
+        "Confirms the signatory is authorised to order services on the company's behalf.",
+      mandatory: true,
+      sampleFile: "D04_board_resolution_authorized_signatory.png",
     },
     {
       code: "SERVICE_ORDER",
@@ -34,6 +45,7 @@ export const telecomPack: IndustryPack = {
       label: "Service order",
       description: "The connectivity ordered, and the site it is ordered for.",
       mandatory: true,
+      sampleFile: "T03_business_connectivity_service_order.png",
     },
     {
       code: "SITE_ADDRESS_PROOF",
@@ -41,6 +53,7 @@ export const telecomPack: IndustryPack = {
       label: "Site address proof",
       description: "A utility bill confirming occupancy of the installation site.",
       mandatory: true,
+      sampleFile: "T04_site_address_electricity_bill.png",
     },
     {
       code: "SITE_AUTHORISATION",
@@ -48,6 +61,7 @@ export const telecomPack: IndustryPack = {
       label: "Site authorisation letter",
       description: "Permission to install equipment at the site.",
       mandatory: false,
+      sampleFile: "T05_site_authorization_letter.png",
     },
   ],
 

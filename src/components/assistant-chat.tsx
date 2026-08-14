@@ -37,6 +37,10 @@ export function AssistantChat({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  // Session handle a provider with server-side memory (Pega's agent) issues
+  // on its first reply. Opaque to this component — only ever carried, never
+  // inspected. Absent for providers that don't use one.
+  const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -75,10 +79,15 @@ export function AssistantChat({
             role,
             content,
           })),
+          conversationId,
         }),
       });
 
       const payload = await response.json();
+
+      if (payload.conversationId) {
+        setConversationId(payload.conversationId);
+      }
 
       setMessages((current) => [
         ...current,

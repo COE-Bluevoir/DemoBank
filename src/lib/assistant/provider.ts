@@ -26,6 +26,14 @@ export interface AssistantRequest {
   caseId?: string;
   /** Prior turns, oldest first. Bounded by the caller. */
   history: readonly AssistantTurn[];
+  /**
+   * Opaque session handle a provider issued on a prior turn.
+   *
+   * Providers that keep their own conversation memory server-side (Pega's
+   * agent does) use this instead of `history` to resume it; providers that
+   * don't may ignore it. Absent on the first turn.
+   */
+  conversationId?: string;
 }
 
 /**
@@ -46,6 +54,12 @@ export interface AssistantReply {
   source: string;
   /** Absent when the provider does not report confidence. */
   confidence?: number;
+  /**
+   * Session handle to echo back on the next turn, when the provider issued
+   * one. The caller stores this opaquely — it is never inspected or parsed,
+   * only carried.
+   */
+  conversationId?: string;
 }
 
 export interface AssistantProvider {

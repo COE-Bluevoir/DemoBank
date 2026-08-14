@@ -39,8 +39,8 @@ import { PegaIntegrationError } from "@/lib/pega/errors";
 import { PegaHttpClient } from "@/lib/pega/http-client";
 import { logServerError } from "@/lib/observability/logger";
 import {
-  SAMPLE_DOCUMENT_FILE_NAMES,
-  sampleDocumentPdf,
+  sampleDocumentBytes,
+  sampleDocumentContentType,
 } from "@/lib/pega/sample-documents";
 
 /**
@@ -69,36 +69,51 @@ function organisationContent(): Record<string, string> {
 }
 
 /**
- * Add a document to the recorded list, replacing any earlier one of the same
- * kind — re-uploading an identity document supersedes it rather than leaving
- * the customer looking at two.
+ * Add a document to the recorded list, replacing any earlier one answering
+ * the same requirement — re-uploading a document supersedes it rather than
+ * leaving the customer looking at two. Matched on `documentCode` rather than
+ * `kind`: several requirements in a business journey share a kind (an
+ * incorporation certificate and a tax certificate are both IDENTITY-class
+ * evidence), so matching on kind would drop unrelated documents whenever a
+ * second one of the same class came in. Falls back to kind for the rare
+ * document with no code, so an older case without one still supersedes
+ * correctly.
  */
 function recordUploadedDocument(
   existing: unknown,
   document: DocumentView,
 ): DocumentView[] {
   const current = Array.isArray(existing) ? (existing as DocumentView[]) : [];
+  const matches = (item: DocumentView) =>
+    document.documentCode && item.documentCode
+      ? item.documentCode === document.documentCode
+      : item.kind === document.kind;
 
-  return [...current.filter((item) => item.kind !== document.kind), document];
+  return [...current.filter((item) => !matches(item)), document];
 }
 
 /**
- * Find the property a flow action's attachment control writes to.
+ * Find the properties a flow action's attachment controls write to.
  *
- * Pega marks it in the view metadata as `@ATTACHMENT .SomeProperty`. Reading
- * it is necessary rather than tidy: the identity and address steps of the same
- * case type use different properties, so a hardcoded name works for one and is
- * rejected by the other.
+ * Pega marks each one in the view metadata as `@ATTACHMENT .SomeProperty`.
+ * Reading it is necessary rather than tidy: which properties a step exposes —
+ * and how many — differs per action, so a hardcoded name works for one and is
+ * rejected by the other. A step can expose several at once, e.g. one per
+ * document in a business banking journey (`Document(1).DocumentFile` through
+ * `Document(5).DocumentFile`), so every marker is collected, in the order
+ * Pega lists them, rather than only the first.
  *
- * Returns the bare property name — Pega rejects the leading dot on submit even
- * though its own metadata includes it.
+ * Returns the bare property paths — Pega rejects the leading dot on submit
+ * even though its own metadata includes it. The path can contain page-list
+ * indices and nested properties (`Document(3).DocumentFile`), so the match
+ * runs to the next quote rather than stopping at the first non-identifier
+ * character.
  */
-export function attachmentFieldFrom(uiResources: unknown): string | undefined {
-  const marker = /"@ATTACHMENT\s+\.?([A-Za-z0-9_]+)"/.exec(
-    JSON.stringify(uiResources ?? {}),
-  );
+export function attachmentFieldsFrom(uiResources: unknown): string[] {
+  const text = JSON.stringify(uiResources ?? {});
+  const markers = text.matchAll(/@ATTACHMENT\s+\.?([^"\\]+)/g);
 
-  return marker?.[1];
+  return [...markers].map((marker) => marker[1]);
 }
 
 /**
@@ -129,7 +144,11 @@ export function isUnsupportedContentFailure(error: unknown): boolean {
 function isMissingAttachmentFailure(error: unknown): boolean {
   return (
     error instanceof PegaIntegrationError &&
-    /attachment content is empty|upload at least one attachment/i.test(
+    // The single-property phrasing ("attachment content is empty") and the
+    // per-document phrasing a business banking step uses ("X is required",
+    // reported against a `.pxAttachmentKey` identifier) are both Pega saying
+    // the same thing: show the uploader, this is not a customer-facing fault.
+    /attachment content is empty|upload at least one attachment|pxAttachmentKey/i.test(
       error.technicalDetail ?? "",
     )
   );
@@ -668,6 +687,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       uploadState.collected.documents,
       {
         documentId: attachmentId,
+        documentCode: document.documentCode,
         kind: document.kind,
         fileName: document.fileName,
         fileType: document.fileType,
@@ -681,11 +701,10 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     await saveState(caseId, uploadState);
 
     // Advancing the open assignment is what moves the case on from "waiting
-    // for a document"; the attachment alone does not.
-    await this.advanceDocumentAssignment(caseId, document, {
-      attachmentId,
-      fileName: document.fileName,
-    });
+    // for a document"; the attachment alone does not. Every document known
+    // so far is resubmitted together so a multi-attachment step does not
+    // have its other slots wiped by a single-document update.
+    await this.submitKnownDocuments(caseId);
 
     return {
       documentId: attachmentId,
@@ -696,56 +715,60 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   }
 
   /**
-   * Attach the bundled sample identity and address documents.
+   * Attach the bundled sample documents for every mandatory requirement in
+   * the case's own industry pack.
    *
-   * Used by the presenter shortcut in place of live file selection; the files
-   * are generated in-process and clearly marked as test data.
+   * Used by the presenter shortcut in place of live file selection; the
+   * files are the real synthetic evidence under `public/sample-docs/`. All
+   * are uploaded before anything is submitted, then cited to Pega together —
+   * a business banking step exposes one attachment property per document, and
+   * submitting them one at a time would have each submission's page-list
+   * update overwrite the ones before it.
    */
   private async attachSampleDocuments(
     caseId: string,
   ): Promise<OnboardingCaseView> {
-    const kinds: Array<UploadedDocument["kind"]> = ["IDENTITY", "ADDRESS"];
+    const initialState = await loadState(caseId);
+    const pack = getIndustryPack(initialState.industryId);
+    const requirements = pack.documentProfile.filter((item) => item.mandatory);
 
-    for (const kind of kinds) {
-      const content = sampleDocumentPdf(kind);
-      const fileName = SAMPLE_DOCUMENT_FILE_NAMES[kind];
+    const uploaded = await Promise.all(
+      requirements.map(async (requirement) => {
+        const content = await sampleDocumentBytes(requirement);
+        const contentType = sampleDocumentContentType(requirement);
+        const fileName = requirement.sampleFile;
+        const attachmentId = await this.uploadAttachment(caseId, {
+          fileName,
+          contentType,
+          content,
+        });
 
-      const attachmentId = await this.uploadAttachment(caseId, {
-        fileName,
-        contentType: "application/pdf",
-        content,
-      });
+        return { requirement, attachmentId, fileName, contentType, fileSize: content.byteLength };
+      }),
+    );
 
-      // Recorded for the same reason as a customer upload: so the page can
-      // show what was attached before Pega's own content catches up.
-      const sampleState = await loadState(caseId);
+    // Recorded for the same reason as a customer upload: so the page can
+    // show what was attached before Pega's own content catches up.
+    const sampleState = await loadState(caseId);
+    for (const item of uploaded) {
       sampleState.collected.documents = recordUploadedDocument(
         sampleState.collected.documents,
         {
-          documentId: attachmentId,
-          kind,
-          fileName,
-          fileType: "application/pdf",
-          fileSize: content.byteLength,
+          documentId: item.attachmentId,
+          documentCode: item.requirement.code,
+          kind: item.requirement.kind,
+          fileName: item.fileName,
+          fileType: item.contentType,
+          fileSize: item.fileSize,
           status: "UPLOADED",
           source: "demo",
-          evidenceReference: attachmentId,
+          evidenceReference: item.attachmentId,
         },
-      );
-      await saveState(caseId, sampleState);
-
-      await this.advanceDocumentAssignment(
-        caseId,
-        {
-          kind,
-          fileName,
-          fileType: "application/pdf",
-          fileSize: content.byteLength,
-          source: "demo",
-        },
-        { attachmentId, fileName },
       );
     }
+    await saveState(caseId, sampleState);
+
+    await this.submitKnownDocuments(caseId);
 
     return this.getCase(caseId);
   }
@@ -843,7 +866,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
 
       const view = await this.readAssignmentAction(assignment.ID, flowActionId);
 
-      if (!needsAttachment || view.attachmentField) {
+      if (!needsAttachment || view.attachmentFields.length > 0) {
         return { assignment, flowActionId, view, state };
       }
 
@@ -912,28 +935,78 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     });
   }
 
-  private async advanceDocumentAssignment(
-    caseId: string,
-    document: UploadedDocument,
-    attachment?: { attachmentId: string; fileName: string },
-  ): Promise<void> {
-    // Pega asks for the two documents at separate steps, with steps that want
-    // no document in between. Walk forward to the one actually waiting for a
-    // file rather than submitting wherever the case happens to be.
-    const located = await this.locateAttachmentStep(caseId, Boolean(attachment));
+  /**
+   * Submit every document the customer has provided so far in one call.
+   *
+   * A business banking step can expose several attachment properties at
+   * once — one per document code, e.g. `Document(1).DocumentFile` through
+   * `Document(5).DocumentFile` — rather than one property per step. Citing
+   * only the document just uploaded and resubmitting the page list with a
+   * single entry would replace the other four rows Pega already holds, so
+   * every known document is resubmitted together, each positioned against
+   * the pack requirement it answers. Slots with no document yet are sent as
+   * empty rows to hold their place in the list.
+   */
+  private async submitKnownDocuments(caseId: string): Promise<void> {
+    const initialState = await loadState(caseId);
+    const pack = getIndustryPack(initialState.industryId);
+    const requirements = pack.documentProfile.filter((item) => item.mandatory);
+    const existingDocuments = Array.isArray(initialState.collected.documents)
+      ? (initialState.collected.documents as DocumentView[])
+      : [];
+    const known = new Map(existingDocuments.map((doc) => [doc.documentCode, doc]));
+
+    const located = await this.locateAttachmentStep(caseId, true);
 
     if (!located) {
-      // Pega has no step open that can receive the file — its own automated
-      // step is still running. Link the evidence to the case anyway, so the
-      // customer's upload is not silently discarded while Pega catches up.
-      if (attachment) {
-        await this.linkAttachmentToCase(caseId, attachment);
+      // Pega has no step open that can receive these — its own automated
+      // step is still running. Link whatever evidence exists to the case
+      // anyway, so it is not silently discarded while Pega catches up.
+      for (const doc of known.values()) {
+        if (doc.evidenceReference) {
+          await this.linkAttachmentToCase(caseId, {
+            attachmentId: doc.evidenceReference,
+            fileName: doc.fileName,
+          });
+        }
       }
 
       return;
     }
 
     const { assignment, flowActionId, view, state } = located;
+    const allowedTypes = allowedValuesFor(view.fields, "DocumentType");
+
+    // Each document's attachment is cited by setting its embedded
+    // `DocumentFile.pxAttachmentKey` directly in content, not through the
+    // top-level `attachments` array — that array is for a step with one
+    // attachment property of its own, and a page-list entry's embedded
+    // attachment page rejects it as invalid attachment details. Confirmed
+    // directly against Pega: citing the same upload through
+    // `content.Document[n].DocumentFile.pxAttachmentKey` is what actually
+    // clears the "document required" validation and advances the case.
+    const documentRows = requirements.map((requirement) => {
+      const doc = known.get(requirement.code);
+
+      if (!doc?.evidenceReference) {
+        return {};
+      }
+
+      return {
+        DocumentFile: { pxAttachmentKey: doc.evidenceReference },
+        DocumentName: doc.fileName,
+        // Pega validates this against its own dropdown list, so the value is
+        // chosen from what the view actually offers.
+        DocumentType: pickDocumentType(doc.kind, doc.documentCode, allowedTypes),
+        // Pega exposes a document number, but the journey does not ask the
+        // customer for one. Sent only if a value is ever captured; an
+        // invented number would be worse than an absent one.
+        DocumentNumber: text(state.collected.documentNumber),
+        DocumentStatus: "Uploaded",
+        EvidenceReference: doc.evidenceReference,
+        UploadedByUser: doc.source === "demo" ? "Demo" : "Customer",
+      };
+    });
 
     const { data, eTag } = await this.client.requestWithMeta({
       method: "PATCH",
@@ -942,47 +1015,12 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       correlationId: state.correlationId,
       eTag: view.eTag ?? state.eTag,
       body: {
-        // The upload steps validate that a file reached the action itself, so
-        // citing the attachment here is what satisfies them; an attachment
-        // linked only to the case leaves the action reporting no content.
-        ...(attachment && view.attachmentField
-          ? {
-              attachments: [
-                {
-                  type: "File",
-                  category: "File",
-                  ID: attachment.attachmentId,
-                  name: attachment.fileName,
-                  attachmentFieldName: view.attachmentField,
-                },
-              ],
-            }
-          : {}),
         content: restrictToAcceptedFields(
           {
             ...toPegaContent(state.collected, {
               correlationId: state.correlationId,
             }),
-            Document: [
-              {
-                DocumentName: document.fileName,
-                // Pega validates this against its own dropdown list, so the
-                // value is chosen from what the view actually offers.
-                DocumentType: pickDocumentType(
-                  document.kind,
-                  allowedValuesFor(view.fields, "DocumentType"),
-                ),
-                // Pega exposes a document number, but the journey does not ask
-                // the customer for one. Sent only if a value is ever captured;
-                // an invented number would be worse than an absent one.
-                DocumentNumber: text(state.collected.documentNumber),
-                // ODHMNT-AgenticC-Data-Document: the state after upload and
-                // the handle Pega's extraction agent uses to fetch the bytes.
-                DocumentStatus: "Uploaded",
-                EvidenceReference: attachment?.attachmentId,
-                UploadedByUser: document.source === "demo" ? "Demo" : "Customer",
-              },
-            ],
+            Document: documentRows,
           },
           view.acceptedFields,
           view.knownFields,
@@ -1046,11 +1084,11 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
 
     return {
       eTag,
-      // Which property this action's attachment control writes to, read from
-      // the action rather than assumed: the identity step collects a list in
-      // `UploadDocs` while the address step takes a single `AttachDoc`, and
-      // citing the wrong one is rejected as invalid attachment details.
-      attachmentField: attachmentFieldFrom(data.uiResources),
+      // Which properties this action's attachment controls write to, read
+      // from the action rather than assumed: a step can expose one shared
+      // attachment property or several document-specific ones, and citing
+      // the wrong one is rejected as invalid attachment details.
+      attachmentFields: attachmentFieldsFrom(data.uiResources),
       // Top-level properties this action will accept.
       acceptedFields: new Set(
         Object.keys(data.data.caseInfo.content ?? {}).filter(notReserved),
@@ -1213,10 +1251,27 @@ function allowedValuesFor(
  */
 function pickDocumentType(
   kind: UploadedDocument["kind"],
+  documentCode: string | undefined,
   allowed: string[],
 ): string | undefined {
   if (allowed.length === 0) {
     return undefined;
+  }
+
+  // Prefer a value that names this specific document — an incorporation
+  // certificate and a tax certificate are both IDENTITY-kind evidence, and a
+  // picklist that distinguishes them should not be flattened to whichever
+  // generic option happens to come first.
+  if (documentCode) {
+    const words = documentCode.toLowerCase().split("_");
+    const specific = allowed.find((option) => {
+      const normalised = option.toLowerCase();
+      return words.every((word) => normalised.includes(word));
+    });
+
+    if (specific) {
+      return specific;
+    }
   }
 
   const preferences =
