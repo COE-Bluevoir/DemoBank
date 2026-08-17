@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -33,12 +31,6 @@ const requestSchema = z.object({
   /** Echoed back from a prior reply, for providers with server-side memory. */
   conversationId: z.string().max(200).optional(),
   /**
-   * Minted by the browser before the first message. Optional at the wire
-   * boundary only so a caller that forgets it still gets an answer — always
-   * present in what reaches a provider, via the fallback below.
-   */
-  sessionId: z.string().max(200).optional(),
-  /**
    * Overrides the configured default backend for this request only.
    * Absent means "use whatever ASSISTANT_PROVIDER says" — the widget's
    * presenter toggle is the only caller expected to set this today.
@@ -69,13 +61,7 @@ export async function POST(request: Request) {
 
   try {
     const { provider, ...request } = parsed.data;
-    const reply = await getAssistantProvider(provider).respond({
-      ...request,
-      // A caller that omits it still gets an answer, but a fresh ID here
-      // cannot resume a session it never had a chance to establish —
-      // callers that need continuity are expected to send their own.
-      sessionId: parsed.data.sessionId || randomUUID(),
-    });
+    const reply = await getAssistantProvider(provider).respond(request);
 
     return NextResponse.json(
       {

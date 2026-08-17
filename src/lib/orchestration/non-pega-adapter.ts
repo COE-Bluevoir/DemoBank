@@ -283,6 +283,14 @@ export class NonPegaOrchestrationAdapter
         break;
       }
 
+      case "CONTINUE_DOCUMENTS": {
+        if (record.documents.length === 0) {
+          throw new Error("Upload at least one document before continuing.");
+        }
+        await this.runVerification(record);
+        break;
+      }
+
       case "CONFIRM_ADDRESS":
       case "ACCEPT_ALTERNATIVE": {
         // The customer accepts what can actually be delivered. Recorded as

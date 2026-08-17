@@ -8,7 +8,7 @@ import { formatBytes } from "@/lib/onboarding/utils";
 import { Badge, Button, Card, SectionTitle } from "@/components/ui";
 
 interface UploadingState {
-  kind: DocumentKind;
+  documentCode: string;
   progress: number;
 }
 
@@ -88,7 +88,7 @@ function DocSlot({
         </label>
       )}
 
-      {uploading?.kind === kind ? (
+      {uploading?.documentCode === requirement.code ? (
         <div className="mt-4 space-y-2">
           <div className="h-2 rounded-full bg-white">
             <div
@@ -113,6 +113,7 @@ export function DocumentUploader({
   onFileChange,
   onRemove,
   onUseDemoDocuments,
+  onContinue,
 }: {
   pack: IndustryPack;
   documents: DocumentView[];
@@ -121,6 +122,7 @@ export function DocumentUploader({
   onFileChange: (requirement: DocumentRequirement, file: File) => void;
   onRemove: (kind: DocumentKind) => void;
   onUseDemoDocuments: () => void;
+  onContinue: () => void;
 }) {
   // Each industry asks for its own evidence: a bank wants incorporation and a
   // tax certificate, an insurer wants a proposal and a surveyor's
@@ -139,29 +141,28 @@ export function DocumentUploader({
           <DocSlot
             key={requirement.code}
             requirement={requirement}
-            document={documents.find(
-              (item) =>
-                item.documentCode === requirement.code ||
-                // Cases opened before documents carried a code fall back to
-                // the evidence class, but only where the class identifies one
-                // requirement — otherwise a single file appears in every slot.
-                (!item.documentCode &&
-                  item.kind === requirement.kind &&
-                  profile.filter((entry) => entry.kind === requirement.kind)
-                    .length === 1),
-            )}
+            document={documents.find((item) => item.documentCode === requirement.code)}
             uploading={uploading}
             onFileChange={onFileChange}
             onRemove={onRemove}
           />
         ))}
       </div>
-      <div className="flex flex-wrap gap-3">
-        <Button disabled={busy} type="button" onClick={onUseDemoDocuments}>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button disabled={busy} type="button" variant="secondary" onClick={onUseDemoDocuments}>
           Use sample documents
         </Button>
+        <Button
+          disabled={busy || documents.length === 0}
+          type="button"
+          onClick={onContinue}
+        >
+          Continue
+        </Button>
         <p className="text-sm text-[var(--color-ink-subtle)]">
-          Sample files in this preview environment are clearly marked as test data.
+          {documents.length > 0
+            ? "Continue when you are ready to submit these attachments for verification."
+            : "Upload at least one document to enable Continue, or use the sample pack."}
         </p>
       </div>
     </Card>

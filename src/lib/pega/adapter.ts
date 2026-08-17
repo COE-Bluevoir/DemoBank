@@ -3,11 +3,10 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { requirePegaConfig } from "@/lib/config/env";
+import type { DocumentRequirement } from "@/lib/industry/types";
 import { getIndustryPack } from "@/lib/industry/registry";
-import type { IndustryId } from "@/lib/industry/types";
-import { DEMO_ORGANISATION } from "@/lib/onboarding/constants";
 import { formatFullName } from "@/lib/onboarding/applicant-name";
-import { formatAddress } from "@/lib/onboarding/party";
+import { digitsOnly } from "@/lib/onboarding/phone-number";
 import { getDocumentStorage } from "@/lib/storage/document-storage";
 import type {
   AssistantMessage,
@@ -32,6 +31,7 @@ import {
 } from "@/lib/pega/dx-mapper";
 import {
   type DxCaseInfo,
+  dxAttachmentListSchema,
   dxAttachmentUploadSchema,
   dxCaseResponseSchema,
   dxCaseTypesResponseSchema,
@@ -43,50 +43,6 @@ import {
   sampleDocumentBytes,
   sampleDocumentContentType,
 } from "@/lib/pega/sample-documents";
-
-/**
- * The organisation being onboarded, in Pega's shape.
- *
- * Property names come from the integration contract rather than the data
- * model document — the two differ, and the contract is what the case type
- * actually accepts on create.
- */
-function organisationContent(): Record<string, string> {
-  return {
-    OrganizationName: DEMO_ORGANISATION.legalName,
-    RegistrationNumber: DEMO_ORGANISATION.registrationNumber,
-    TaxIdentifier: DEMO_ORGANISATION.panNumber ?? "",
-    OrganizationType: DEMO_ORGANISATION.organisationType,
-    CountryOfRegistration: DEMO_ORGANISATION.registeredAddress.country,
-    IndustrySector: DEMO_ORGANISATION.industrySector,
-    // Pega stores dates unpunctuated on create.
-    DateOfIncorporation: (DEMO_ORGANISATION.incorporationDate ?? "").replace(
-      /-/g,
-      "",
-    ),
-    RegisteredAddress: formatAddress(DEMO_ORGANISATION.registeredAddress),
-    AuthorizedRepresentative: DEMO_ORGANISATION.authorisedRepresentative,
-  };
-}
-
-/**
- * The Pega attachment category a document requirement must be recorded
- * under, so `pxIsAttachmentOfCategoryInCase` (run by the case type's own
- * attachment validation) finds it. `undefined` when the pack defines no
- * category — the generic "File" category is used instead.
- */
-function pegaAttachmentCategoryFor(
-  industryId: IndustryId,
-  documentCode: string | undefined,
-): string | undefined {
-  if (!documentCode) {
-    return undefined;
-  }
-
-  return getIndustryPack(industryId).documentProfile.find(
-    (item) => item.code === documentCode,
-  )?.pegaAttachmentCategory;
-}
 
 /**
  * Add a document to the recorded list, replacing any earlier one answering
@@ -104,13 +60,34 @@ function recordUploadedDocument(
   document: DocumentView,
 ): DocumentView[] {
   const current = Array.isArray(existing) ? (existing as DocumentView[]) : [];
-  const matches = (item: DocumentView) =>
-    document.documentCode && item.documentCode
-      ? item.documentCode === document.documentCode
-      : item.kind === document.kind;
+  const matches = (item: DocumentView) => {
+    if (document.documentCode) {
+      return item.documentCode === document.documentCode;
+    }
+
+    // Do not collapse other coded IDENTITY/ADDRESS files into this one.
+    if (item.documentCode) {
+      return false;
+    }
+
+    return item.kind === document.kind;
+  };
 
   return [...current.filter((item) => !matches(item)), document];
 }
+
+/**
+ * CollectAddress attachment properties, keyed by the industry-pack document
+ * code the website already uses. Continue maps each upload onto the matching
+ * field rather than onto Document(1)…Document(5) by list order.
+ */
+export const PEGA_EVIDENCE_FIELDS: Record<string, string> = {
+  INCORPORATION_CERTIFICATE: "CertificationOfIncorporation",
+  REPRESENTATIVE_ID: "AuthorisedSignatoryIdentity",
+  AUTHORIZATION_LETTER: "BoardResolution",
+  TAX_REGISTRATION: "TaxRegistrationCertificate",
+  ADDRESS_PROOF: "BusinessAddressProof",
+};
 
 /**
  * Find the properties a flow action's attachment controls write to.
@@ -120,8 +97,9 @@ function recordUploadedDocument(
  * and how many — differs per action, so a hardcoded name works for one and is
  * rejected by the other. A step can expose several at once, e.g. one per
  * document in a business banking journey (`Document(1).DocumentFile` through
- * `Document(5).DocumentFile`), so every marker is collected, in the order
- * Pega lists them, rather than only the first.
+ * `Document(5).DocumentFile` or the named evidence fields such as
+ * `CertificationOfIncorporation`), so every marker is collected, in the
+ * order Pega lists them, rather than only the first.
  *
  * Returns the bare property paths — Pega rejects the leading dot on submit
  * even though its own metadata includes it. The path can contain page-list
@@ -131,9 +109,20 @@ function recordUploadedDocument(
  */
 export function attachmentFieldsFrom(uiResources: unknown): string[] {
   const text = JSON.stringify(uiResources ?? {});
-  const markers = text.matchAll(/@ATTACHMENT\s+\.?([^"\\]+)/g);
+  const named = Object.values(PEGA_EVIDENCE_FIELDS).join("|");
+  const fromMarkers = [...text.matchAll(/@ATTACHMENT\s+\.?([^"\\]+)/g)].map(
+    (marker) => marker[1],
+  );
+  const fromValues = [
+    ...text.matchAll(
+      new RegExp(
+        `"value"\\s*:\\s*"\\.?((?:Document\\(\\d+\\)[^"]*|(?:AttachDoc|AddressDoc|UploadDocs|${named})[^"]*))"`,
+        "g",
+      ),
+    ),
+  ].map((marker) => marker[1]);
 
-  return [...markers].map((marker) => marker[1]);
+  return [...new Set([...fromMarkers, ...fromValues].map((field) => field.replace(/^\./, "")))];
 }
 
 /**
@@ -168,9 +157,79 @@ function isMissingAttachmentFailure(error: unknown): boolean {
     // per-document phrasing a business banking step uses ("X is required",
     // reported against a `.pxAttachmentKey` identifier) are both Pega saying
     // the same thing: show the uploader, this is not a customer-facing fault.
-    /attachment content is empty|upload at least one attachment|pxAttachmentKey/i.test(
+    /attachment content is empty|upload at least one attachment|pxAttachmentKey|document is required|letter is required/i.test(
       error.technicalDetail ?? "",
     )
+  );
+}
+
+/**
+ * True when Pega rejected the DX `attachments` array itself.
+ *
+ * Named CollectAddress attachment fields accept the DX `attachments` array.
+ * The older `Document(n).DocumentFile` page-list controls do not — those
+ * bind through `pageInstructions` instead.
+ */
+function isInvalidAttachmentDetails(error: unknown): boolean {
+  return (
+    error instanceof PegaIntegrationError &&
+    /Error_Invalid_Attachment_Details|Invalid attachment details/i.test(
+      error.technicalDetail ?? "",
+    )
+  );
+}
+
+function isInvalidPageInstructions(error: unknown): boolean {
+  return (
+    error instanceof PegaIntegrationError &&
+    /Error_Invalid_Page_Instructions|invalid page instruction/i.test(
+      error.technicalDetail ?? "",
+    )
+  );
+}
+
+function isExecutionError(error: unknown): boolean {
+  return (
+    error instanceof PegaIntegrationError &&
+    /Error_Execution_Error|Execution error|HTTP 500/i.test(
+      error.technicalDetail ?? "",
+    )
+  );
+}
+
+function namedAttachmentPagesBound(
+  content: Record<string, unknown> | undefined,
+  fields: string[],
+): boolean {
+  if (fields.length === 0) {
+    return false;
+  }
+
+  return fields.every((field) => {
+    const page = content?.[field];
+    if (!page || typeof page !== "object") {
+      return false;
+    }
+
+    const key = (page as Record<string, unknown>).pxAttachmentKey;
+    return typeof key === "string" && key.trim().length > 0;
+  });
+}
+
+function isCollectAddressBindRetryable(error: unknown): boolean {
+  if (
+    error instanceof PegaIntegrationError &&
+    error.kind === "VERSION_CONFLICT"
+  ) {
+    return true;
+  }
+
+  return (
+    isUnsupportedContentFailure(error) ||
+    isInvalidAttachmentDetails(error) ||
+    isInvalidPageInstructions(error) ||
+    isMissingAttachmentFailure(error) ||
+    isExecutionError(error)
   );
 }
 
@@ -216,7 +275,7 @@ const MAX_CHAINED_ACTIONS = 8;
  * customer returns to a case this instance has not served before.
  */
 async function loadState(caseId: string): Promise<CaseIntegrationState> {
-  const existing = await getPegaCaseStateStore().get(caseId);
+  const existing = await getPegaCaseStateStore().get(decodeCaseId(caseId));
 
   if (existing) {
     return existing;
@@ -225,7 +284,7 @@ async function loadState(caseId: string): Promise<CaseIntegrationState> {
   return {
     scenarioId: "ADDRESS_PEP_REVIEW",
     industryId: "banking",
-    correlationId: `corr-${caseId}`,
+    correlationId: `corr-${decodeCaseId(caseId)}`,
     version: 1,
     collected: {},
   };
@@ -235,7 +294,15 @@ async function saveState(
   caseId: string,
   state: CaseIntegrationState,
 ): Promise<void> {
-  await getPegaCaseStateStore().put(caseId, state);
+  await getPegaCaseStateStore().put(decodeCaseId(caseId), state);
+}
+
+function decodeCaseId(caseId: string): string {
+  try {
+    return decodeURIComponent(caseId);
+  } catch {
+    return caseId;
+  }
 }
 
 /**
@@ -296,60 +363,24 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     const correlationId = `corr-${randomUUID()}`;
     const pack = getIndustryPack(request.industryId);
 
-    // The integration contract asks for the industry codes and the
-    // organisation on create. The deployed case type does not expose them
-    // yet, and Pega rejects an entire submission containing a property its
-    // view does not define — so the full payload is attempted first and the
-    // journey falls back to what today's build accepts.
-    const contractContent = {
-      IndustryCode: pack.industryCode,
-      JourneyCode: pack.journeyCode,
-      ProductIntent: pack.brand.productName,
-      Channel: request.channel,
-      Organization: organisationContent(),
-      // Carries the trace identifier into Pega's own audit trail.
-      SessionContext: correlationId,
-    };
-
-    const supportedContent = {
-      ProductIntent: pack.brand.productName,
-      CustomerOnboardingName: DEMO_ORGANISATION.legalName,
-    };
-
-    const createCase = (content: Record<string, unknown>) =>
-      this.client.requestWithMeta({
-        method: "POST",
-        path: "/cases",
-        schema: dxCaseResponseSchema,
-        correlationId,
-        // A retried create must never open a second onboarding case.
-        idempotencyKey: correlationId,
-        query: { viewType: "none" },
-        body: { caseTypeID: this.caseTypeId, content },
-      });
-
-    let data;
-    let eTag;
-
-    try {
-      ({ data, eTag } = await createCase(contractContent));
-    } catch (error) {
-      if (!isUnsupportedContentFailure(error)) {
-        throw error;
-      }
-
-      // Reported rather than swallowed: the demo still runs, but the case
-      // will not carry its industry until Pega deploys the new case type.
-      logServerError(
-        { scope: "pega", caseId: "create", correlationId },
-        new Error(
-          "Pega rejected the contract create payload; falling back to the " +
-            "properties the deployed case type exposes.",
-        ),
-      );
-
-      ({ data, eTag } = await createCase(supportedContent));
-    }
+    // Create with the properties the deployed case type already accepts.
+    // Sending the fuller contract payload first was rejected on every start
+    // and added a wasted round trip to connectivity.
+    const { data, eTag } = await this.client.requestWithMeta({
+      method: "POST",
+      path: "/cases",
+      schema: dxCaseResponseSchema,
+      correlationId,
+      // A retried create must never open a second onboarding case.
+      idempotencyKey: correlationId,
+      query: { viewType: "none" },
+      body: {
+        caseTypeID: this.caseTypeId,
+        content: {
+          ProductIntent: pack.brand.productName,
+        },
+      },
+    });
 
     const caseInfo = data.data.caseInfo;
 
@@ -389,15 +420,45 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     caseId: string,
     request: SubmitCaseActionRequest,
   ): Promise<OnboardingCaseView> {
-    // Read first: this refreshes the eTag Pega requires on write and lets a
-    // stale browser submission be rejected before it reaches the case.
     const { caseInfo, state } = await this.readCase(caseId);
 
-    // Concurrency is enforced by Pega's own eTag via `If-Match`, not by the
-    // synthetic version. Pega advances a case through several flow actions per
-    // customer step, so a locally counted version would go stale constantly and
-    // reject valid submissions. A genuinely stale write still fails, because
-    // Pega rejects the eTag and that surfaces as a 409.
+    if (request.actionId === "USE_DEMO_DOCUMENTS") {
+      state.collected = {
+        ...state.collected,
+        documentsProvided: true,
+        awaitingDocumentUpload: false,
+      };
+      await saveState(caseId, state);
+      return this.attachSampleDocuments(caseId);
+    }
+
+    if (request.actionId === "CONTINUE_DOCUMENTS") {
+      const uploaded = Array.isArray(state.collected.documents)
+        ? state.collected.documents
+        : [];
+
+      if (uploaded.length === 0) {
+        throw new PegaIntegrationError("VALIDATION", {
+          technicalDetail: "Continue requires at least one uploaded attachment.",
+          correlationId: state.correlationId,
+        });
+      }
+
+      await this.handoverDocumentsToPega(caseId, {
+        fillMissingWithSamples: true,
+      });
+      await this.syncCustomerOnboardingName(caseId);
+
+      const latest = await this.readCase(caseId);
+      return mapDxCaseToView(latest.caseInfo, {
+        scenarioId: latest.state.scenarioId,
+        industryId: latest.state.industryId,
+        caseVersion: latest.state.version,
+        correlationId: latest.state.correlationId,
+        collected: latest.state.collected,
+      });
+    }
+
     const assignment = primaryAssignment(caseInfo);
 
     if (!assignment) {
@@ -407,9 +468,6 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       });
     }
 
-    // The case is parked in Pega's error-recovery flow. Only an operator can
-    // clear it, so the customer is shown the saved-application state rather
-    // than a step that would fail again.
     if (awaitsProblemFlowResolution(caseInfo)) {
       return mapDxCaseToView(caseInfo, {
         scenarioId: state.scenarioId,
@@ -418,20 +476,6 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         correlationId: state.correlationId,
         collected: state.collected,
       });
-    }
-
-    // Handing over documents must work even while Pega runs an automated step
-    // of its own: that is precisely when the customer is sitting on the upload
-    // screen waiting. The attachment path finds its own step, or keeps the
-    // evidence on the case until one opens.
-    if (request.actionId === "USE_DEMO_DOCUMENTS") {
-      state.collected = {
-        ...state.collected,
-        documentsProvided: true,
-        awaitingDocumentUpload: false,
-      };
-      await saveState(caseId, state);
-      return this.attachSampleDocuments(caseId);
     }
 
     // Pega's agent queue opens an assignment that offers no actions. There is
@@ -478,6 +522,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     // answering Pega on their behalf.
     const gateLabel = `${assignment.name ?? ""} ${flowActionId}`;
     if (isGated(gateLabel, state.collected)) {
+      await this.syncCustomerOnboardingName(caseId);
       return mapDxCaseToView(caseInfo, {
         scenarioId: state.scenarioId,
         industryId: state.industryId,
@@ -500,11 +545,24 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         eTag: view.eTag ?? state.eTag,
         idempotencyKey: `${caseId}:${request.actionId}:${request.expectedCaseVersion}`,
         body: {
-          content: restrictToAcceptedFields(
-            conformToAllowedValues(content, view.fields, PICKLIST_FIELDS),
-            view.acceptedFields,
-            view.knownFields,
-          ),
+          content: (() => {
+            const filtered = restrictToAcceptedFields(
+              conformToAllowedValues(content, view.fields, PICKLIST_FIELDS),
+              view.acceptedFields,
+              view.knownFields,
+            );
+            const onboardingName = text(content.CustomerOnboardingName);
+
+            if (
+              onboardingName &&
+              (view.acceptedFields.has("CustomerOnboardingName") ||
+                view.knownFields.has("CustomerOnboardingName"))
+            ) {
+              filtered.CustomerOnboardingName = onboardingName;
+            }
+
+            return filtered;
+          })(),
         },
       }));
     } catch (error) {
@@ -513,6 +571,8 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       if (isMissingAttachmentFailure(error)) {
         state.collected.awaitingDocumentUpload = true;
         await saveState(caseId, state);
+
+        await this.syncCustomerOnboardingName(caseId);
 
         return mapDxCaseToView(caseInfo, {
           scenarioId: state.scenarioId,
@@ -554,6 +614,8 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       updated.collected.awaitingDocumentUpload = true;
       await saveState(caseId, updated);
     }
+
+    await this.syncCustomerOnboardingName(caseId);
 
     return mapDxCaseToView(caseInfoAfter, {
       scenarioId: updated.scenarioId,
@@ -620,6 +682,11 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       }
 
       const view = await this.readAssignmentAction(assignment.ID, nextActionId);
+      const outgoingContent = restrictToAcceptedFields(
+        conformToAllowedValues(content, view.fields, PICKLIST_FIELDS),
+        view.acceptedFields,
+        view.knownFields,
+      );
 
       let data;
       let eTag;
@@ -632,11 +699,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
           correlationId: state.correlationId,
           eTag: view.eTag ?? state.eTag,
           body: {
-            content: restrictToAcceptedFields(
-              conformToAllowedValues(content, view.fields, PICKLIST_FIELDS),
-              view.acceptedFields,
-              view.knownFields,
-            ),
+            content: outgoingContent,
           },
         }));
       } catch (error) {
@@ -677,8 +740,6 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     caseId: string,
     document: UploadedDocument,
   ): Promise<DocumentUploadResponse> {
-    // Retrieve the bytes the upload route already stored, so the real file
-    // reaches Pega rather than only its metadata.
     const stored = document.storageReference
       ? await getDocumentStorage().get(document.storageReference)
       : null;
@@ -689,37 +750,12 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       });
     }
 
+    const documentId = document.storageReference ?? randomUUID();
     const uploadState = await loadState(caseId);
-    const category = pegaAttachmentCategoryFor(
-      uploadState.industryId,
-      document.documentCode,
-    );
-
-    // Categorised so Pega's own attachment-store validation
-    // (`pxIsAttachmentOfCategoryInCase`) recognises it — citing the upload
-    // inside a flow action's content later is not enough by itself; the
-    // category must be written via this call.
-    const attachmentId = await this.attachToCase(
-      caseId,
-      {
-        fileName: document.fileName,
-        contentType: document.fileType,
-        content: stored.content,
-      },
-      category,
-    );
-
-    // The customer has now genuinely provided a document, which opens the
-    // upload gate for the assignment waiting on one.
-    uploadState.collected.documentsProvided = true;
-    uploadState.collected.awaitingDocumentUpload = false;
-    // Pega's case content does not carry the file until later in its own
-    // flow, so what the customer uploaded is recorded here — otherwise they
-    // upload a document and the page shows nothing back.
     uploadState.collected.documents = recordUploadedDocument(
       uploadState.collected.documents,
       {
-        documentId: attachmentId,
+        documentId,
         documentCode: document.documentCode,
         kind: document.kind,
         fileName: document.fileName,
@@ -727,23 +763,21 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         fileSize: document.fileSize,
         status: "UPLOADED",
         source: document.source === "demo" ? "demo" : "upload",
-        evidenceReference: attachmentId,
+        evidenceReference: documentId,
         storageReference: document.storageReference,
       },
     );
+
+    // Continue (or Use sample documents) is what submits the pack to Pega.
+    uploadState.collected.documentsProvided = false;
+    uploadState.collected.awaitingDocumentUpload = true;
     await saveState(caseId, uploadState);
 
-    // Advancing the open assignment is what moves the case on from "waiting
-    // for a document"; the attachment alone does not. Every document known
-    // so far is resubmitted together so a multi-attachment step does not
-    // have its other slots wiped by a single-document update.
-    await this.submitKnownDocuments(caseId);
-
     return {
-      documentId: attachmentId,
+      documentId,
       fileName: document.fileName,
       status: "UPLOADED",
-      evidenceReference: attachmentId,
+      evidenceReference: documentId,
     };
   }
 
@@ -761,68 +795,21 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   private async attachSampleDocuments(
     caseId: string,
   ): Promise<OnboardingCaseView> {
-    const initialState = await loadState(caseId);
-    const pack = getIndustryPack(initialState.industryId);
-    const requirements = pack.documentProfile.filter((item) => item.mandatory);
-
-    const uploaded = await Promise.all(
-      requirements.map(async (requirement) => {
-        const content = await sampleDocumentBytes(requirement);
-        const contentType = sampleDocumentContentType(requirement);
-        const fileName = requirement.sampleFile;
-        // Categorised the same way a real customer upload is — the sample
-        // documents must satisfy the same attachment-store validation.
-        const attachmentId = await this.attachToCase(
-          caseId,
-          { fileName, contentType, content },
-          requirement.pegaAttachmentCategory,
-        );
-
-        return { requirement, attachmentId, fileName, contentType, fileSize: content.byteLength };
-      }),
-    );
-
-    // Recorded for the same reason as a customer upload: so the page can
-    // show what was attached before Pega's own content catches up.
-    const sampleState = await loadState(caseId);
-    for (const item of uploaded) {
-      sampleState.collected.documents = recordUploadedDocument(
-        sampleState.collected.documents,
-        {
-          documentId: item.attachmentId,
-          documentCode: item.requirement.code,
-          kind: item.requirement.kind,
-          fileName: item.fileName,
-          fileType: item.contentType,
-          fileSize: item.fileSize,
-          status: "UPLOADED",
-          source: "demo",
-          evidenceReference: item.attachmentId,
-        },
-      );
-    }
-    await saveState(caseId, sampleState);
-
-    await this.submitKnownDocuments(caseId);
-
+    await this.handoverDocumentsToPega(caseId, {
+      fillMissingWithSamples: true,
+    });
     return this.getCase(caseId);
   }
 
   /**
-   * Upload a file to Pega and record it in the case's own attachment store
-   * under the given category.
+   * Upload a file to Pega's attachment store.
    *
-   * The category is not cosmetic: case-type attachment validation (e.g.
-   * `pxIsAttachmentOfCategoryInCase`) queries this store directly, keyed by
-   * category. Citing the same upload inside a flow action's own content
-   * later (`Document[n].DocumentFile.pxAttachmentKey`) does not write this
-   * record — only this call does — so every document upload goes through
-   * here, whether or not a flow action is currently open to receive it.
+   * Returns the upload's ID, which the flow action then cites to attach it to
+   * the case. Uploading does not by itself associate the file with anything.
    */
-  private async attachToCase(
+  private async uploadAttachment(
     caseId: string,
     file: { fileName: string; contentType: string; content: Uint8Array },
-    category = "File",
   ): Promise<string> {
     const state = await loadState(caseId);
 
@@ -835,32 +822,46 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       schema: dxAttachmentUploadSchema,
     });
 
-    await this.client.request({
-      method: "POST",
-      path: `/cases/${encodeURIComponent(caseId)}/attachments`,
-      schema: z.unknown(),
-      correlationId: state.correlationId,
-      body: {
-        attachments: [
-          {
-            type: "File",
-            category,
-            ID: uploaded.ID,
-            name: file.fileName,
-          },
-        ],
-      },
-    });
-
     return uploaded.ID;
   }
 
   /**
-   * Move the case past the assignment that was waiting for this document.
+   * Put the file bytes on the case attachment list.
    *
-   * Populates the `Document` page list where the flow action exposes it, so
-   * the case data records what was provided, not just the raw attachment.
+   * Staging `/attachments/upload` IDs are not shown in Pega until they are
+   * bound. Posting the file itself to `/cases/{id}/attachments` is what the
+   * Attachments gadget lists.
    */
+  private async attachBinaryToCase(
+    caseId: string,
+    file: { fileName: string; contentType: string; content: Uint8Array },
+  ): Promise<boolean> {
+    const state = await loadState(caseId);
+
+    try {
+      await this.client.uploadFile({
+        path: `/cases/${encodeURIComponent(caseId)}/attachments`,
+        fileName: file.fileName,
+        contentType: file.contentType,
+        content: file.content,
+        correlationId: state.correlationId,
+        schema: z.unknown(),
+      });
+      return true;
+    } catch (error) {
+      logServerError(
+        {
+          scope: "pega",
+          correlationId: state.correlationId,
+          caseId,
+          detail: `Direct case attach of ${file.fileName} failed; will try staging IDs.`,
+        },
+        error,
+      );
+      return false;
+    }
+  }
+
   /**
    * Find the step that is waiting for a document, advancing past those that
    * are not.
@@ -881,8 +882,16 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       }
 
       const view = await this.readAssignmentAction(assignment.ID, flowActionId);
+      const looksLikeDocumentStep =
+        /collectaddress|collect address|uploaddoc|attachdoc|providedocument/i.test(
+          `${assignment.name ?? ""} ${flowActionId}`,
+        );
 
-      if (!needsAttachment || view.attachmentFields.length > 0) {
+      if (
+        !needsAttachment ||
+        view.attachmentFields.length > 0 ||
+        looksLikeDocumentStep
+      ) {
         return { assignment, flowActionId, view, state };
       }
 
@@ -892,28 +901,36 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         correlationId: state.correlationId,
       });
 
-      const { data, eTag } = await this.client.requestWithMeta({
-        method: "PATCH",
-        path: `/assignments/${encodeURIComponent(assignment.ID)}/actions/${encodeURIComponent(flowActionId)}`,
-        schema: dxCaseResponseSchema,
-        correlationId: state.correlationId,
-        eTag: view.eTag ?? state.eTag,
-        body: {
-          content: restrictToAcceptedFields(
-            conformToAllowedValues(content, view.fields, PICKLIST_FIELDS),
-            view.acceptedFields,
-            view.knownFields,
-          ),
-        },
-      });
+      try {
+        const { data, eTag } = await this.client.requestWithMeta({
+          method: "PATCH",
+          path: `/assignments/${encodeURIComponent(assignment.ID)}/actions/${encodeURIComponent(flowActionId)}`,
+          schema: dxCaseResponseSchema,
+          correlationId: state.correlationId,
+          eTag: view.eTag ?? state.eTag,
+          body: {
+            content: restrictToAcceptedFields(
+              conformToAllowedValues(content, view.fields, PICKLIST_FIELDS),
+              view.acceptedFields,
+              view.knownFields,
+            ),
+          },
+        });
 
-      const previousUpdateTime = caseInfo.lastUpdateTime;
-      await saveState(caseId, recordObservation(state, data.data.caseInfo, eTag));
+        const previousUpdateTime = caseInfo.lastUpdateTime;
+        await saveState(caseId, recordObservation(state, data.data.caseInfo, eTag));
 
-      // Pega accepted the call but the case did not move: stop rather than
-      // spin against a step this document cannot satisfy.
-      if (data.data.caseInfo.lastUpdateTime === previousUpdateTime) {
-        return undefined;
+        // Pega accepted the call but the case did not move: stop rather than
+        // spin against a step this document cannot satisfy.
+        if (data.data.caseInfo.lastUpdateTime === previousUpdateTime) {
+          return undefined;
+        }
+      } catch (error) {
+        if (isMissingAttachmentFailure(error) && needsAttachment) {
+          return { assignment, flowActionId, view, state };
+        }
+
+        throw error;
       }
     }
 
@@ -921,130 +938,320 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   }
 
   /**
-   * Associate an already-uploaded file with the case.
+   * Upload the five mandatory documents and cite each one on CollectAddress.
    *
-   * Used when no flow action is open to receive it: the evidence still belongs
-   * to the case, and discarding it would mean asking the customer for the same
-   * document again once Pega moves on.
+   * Each file is bound to the matching named attachment field
+   * (`CertificationOfIncorporation`, `AuthorisedSignatoryIdentity`,
+   * `BoardResolution`, `TaxRegistrationCertificate`, `BusinessAddressProof`)
+   * using a fresh `/attachments/upload` ID. The same bytes are also posted to
+   * `/cases/{id}/attachments` so the files appear in the Attachments utility.
    */
-  private async linkAttachmentToCase(
+  private async handoverDocumentsToPega(
     caseId: string,
-    attachment: { attachmentId: string; fileName: string },
+    options: { fillMissingWithSamples: boolean },
   ): Promise<void> {
-    const state = await loadState(caseId);
-
-    await this.client.request({
-      method: "POST",
-      path: `/cases/${encodeURIComponent(caseId)}/attachments`,
-      schema: z.unknown(),
-      correlationId: state.correlationId,
-      body: {
-        attachments: [
-          {
-            type: "File",
-            category: "File",
-            ID: attachment.attachmentId,
-            name: attachment.fileName,
-          },
-        ],
-      },
-    });
-  }
-
-  /**
-   * Submit every document the customer has provided so far in one call.
-   *
-   * A business banking step can expose several attachment properties at
-   * once — one per document code, e.g. `Document(1).DocumentFile` through
-   * `Document(5).DocumentFile` — rather than one property per step. Citing
-   * only the document just uploaded and resubmitting the page list with a
-   * single entry would replace the other four rows Pega already holds, so
-   * every known document is resubmitted together, each positioned against
-   * the pack requirement it answers. Slots with no document yet are sent as
-   * empty rows to hold their place in the list.
-   */
-  private async submitKnownDocuments(caseId: string): Promise<void> {
     const initialState = await loadState(caseId);
     const pack = getIndustryPack(initialState.industryId);
     const requirements = pack.documentProfile.filter((item) => item.mandatory);
     const existingDocuments = Array.isArray(initialState.collected.documents)
       ? (initialState.collected.documents as DocumentView[])
       : [];
-    const known = new Map(existingDocuments.map((doc) => [doc.documentCode, doc]));
+    const known = new Map(
+      existingDocuments
+        .filter((doc) => doc.documentCode)
+        .map((doc) => [doc.documentCode as string, doc]),
+    );
 
-    const located = await this.locateAttachmentStep(caseId, true);
+    const prepared: Array<{
+      requirement: DocumentRequirement;
+      attachmentId: string;
+      fileName: string;
+      fileType: string;
+      fileSize: number;
+      source: DocumentView["source"];
+      storageReference?: string;
+    }> = [];
+    const usedStorageKeys = new Set<string>();
 
-    if (!located) {
-      // Pega has no step open that can receive these — its own automated
-      // step is still running. Link whatever evidence exists to the case
-      // anyway, so it is not silently discarded while Pega catches up.
-      for (const doc of known.values()) {
-        if (doc.evidenceReference) {
-          await this.linkAttachmentToCase(caseId, {
-            attachmentId: doc.evidenceReference,
-            fileName: doc.fileName,
-          });
-        }
+    for (const requirement of requirements) {
+      const existing = known.get(requirement.code);
+      const storageKey = existing?.storageReference;
+      const stored =
+        storageKey && !usedStorageKeys.has(storageKey)
+          ? await getDocumentStorage().get(storageKey)
+          : null;
+
+      if (!stored && !options.fillMissingWithSamples) {
+        continue;
       }
 
+      if (stored && storageKey) {
+        usedStorageKeys.add(storageKey);
+      }
+
+      const content = stored?.content ?? (await sampleDocumentBytes(requirement));
+      const fileName = stored
+        ? existing?.fileName ?? requirement.sampleFile
+        : requirement.sampleFile;
+      const contentType = stored
+        ? stored.metadata.fileType || existing?.fileType || sampleDocumentContentType(requirement)
+        : sampleDocumentContentType(requirement);
+      const source: DocumentView["source"] = stored
+        ? existing?.source === "demo"
+          ? "demo"
+          : "upload"
+        : "demo";
+
+      const attachmentId = await this.uploadAttachment(caseId, {
+        fileName,
+        contentType,
+        content,
+      });
+
+      prepared.push({
+        requirement,
+        attachmentId,
+        fileName,
+        fileType: contentType,
+        fileSize: content.byteLength,
+        source,
+        storageReference: existing?.storageReference,
+      });
+    }
+
+    if (prepared.length === 0) {
+      throw new PegaIntegrationError("VALIDATION", {
+        technicalDetail: "No documents were available to send to Pega.",
+        correlationId: initialState.correlationId,
+      });
+    }
+
+    const recorded = await loadState(caseId);
+    for (const item of prepared) {
+      recorded.collected.documents = recordUploadedDocument(
+        recorded.collected.documents,
+        {
+          documentId: item.attachmentId,
+          documentCode: item.requirement.code,
+          kind: item.requirement.kind,
+          fileName: item.fileName,
+          fileType: item.fileType,
+          fileSize: item.fileSize,
+          status: "UPLOADED",
+          source: item.source,
+          evidenceReference: item.attachmentId,
+          storageReference: item.storageReference,
+        },
+      );
+    }
+    recorded.collected.verificationStartedAt =
+      recorded.collected.verificationStartedAt ?? new Date().toISOString();
+    await saveState(caseId, recorded);
+
+    // Register each upload in Pega's attachment store under its specific
+    // business category — confirmed (both by Pega-side rule inspection and
+    // by live testing) to be what `pxIsAttachmentOfCategoryInCase` actually
+    // checks. Neither the generic "File" category nor citing the upload
+    // inside the flow action's own content/pageInstructions satisfies it;
+    // the named per-field `/save` binding attempted below additionally
+    // returns HTTP 500/400 on this Pega instance regardless of body shape,
+    // so this direct category POST is the reliable path, done unconditionally
+    // before anything else touches the assignment.
+    for (const item of prepared) {
+      const category = PEGA_EVIDENCE_FIELDS[item.requirement.code] ?? "File";
+
+      try {
+        await this.client.request({
+          method: "POST",
+          path: `/cases/${encodeURIComponent(caseId)}/attachments`,
+          schema: z.unknown(),
+          correlationId: recorded.correlationId,
+          body: {
+            attachments: [
+              {
+                type: "File",
+                category,
+                ID: item.attachmentId,
+                name: item.fileName,
+              },
+            ],
+          },
+        });
+      } catch (error) {
+        logServerError(
+          {
+            scope: "pega",
+            correlationId: recorded.correlationId,
+            caseId,
+            detail: `Category-tagged attach failed for ${item.requirement.code} (category=${category})`,
+          },
+          error,
+        );
+      }
+    }
+
+    const located = await this.locateAttachmentStep(caseId, true);
+    const contentPayload = toPegaContent(recorded.collected, {
+      correlationId: recorded.correlationId,
+    });
+
+    if (!located) {
+      // Nothing open to submit against — the attachments are already
+      // correctly categorised on the case from the loop above, which is all
+      // `pxIsAttachmentOfCategoryInCase` actually checks.
+      const finalState = await loadState(caseId);
+      finalState.collected.documentsProvided = true;
+      finalState.collected.awaitingDocumentUpload = false;
+      await saveState(caseId, finalState);
       return;
     }
 
     const { assignment, flowActionId, view, state } = located;
-    const allowedTypes = allowedValuesFor(view.fields, "DocumentType");
+    const baseContent = restrictToAcceptedFields(
+      contentPayload,
+      view.acceptedFields,
+      view.knownFields,
+    );
+    delete baseContent.Document;
+    for (const field of Object.values(PEGA_EVIDENCE_FIELDS)) {
+      delete baseContent[field];
+    }
 
-    // Each document's attachment is cited by setting its embedded
-    // `DocumentFile.pxAttachmentKey` directly in content, not through the
-    // top-level `attachments` array — that array is for a step with one
-    // attachment property of its own, and a page-list entry's embedded
-    // attachment page rejects it as invalid attachment details. Confirmed
-    // directly against Pega: citing the same upload through
-    // `content.Document[n].DocumentFile.pxAttachmentKey` is what actually
-    // clears the "document required" validation and advances the case.
-    const documentRows = requirements.map((requirement) => {
-      const doc = known.get(requirement.code);
+    // No attachment content belongs in this submission at all: the category
+    // registration above is a case-level, database-backed fact that
+    // `pxIsAttachmentOfCategoryInCase` reads directly, independent of
+    // whatever this PATCH body contains.
+    try {
+      const { data, eTag } = await this.client.requestWithMeta({
+        method: "PATCH",
+        path: `/assignments/${encodeURIComponent(assignment.ID)}/actions/${encodeURIComponent(flowActionId)}`,
+        schema: dxCaseResponseSchema,
+        correlationId: state.correlationId,
+        eTag: view.eTag ?? state.eTag,
+        body: { content: baseContent },
+      });
+      await saveState(caseId, recordObservation(state, data.data.caseInfo, eTag));
+      await this.advanceWhileStepUnchanged(caseId, data.data.caseInfo, contentPayload);
+    } catch (error) {
+      logServerError(
+        {
+          scope: "pega",
+          correlationId: state.correlationId,
+          caseId,
+          detail:
+            "CollectAddress submit failed after category-tagged attachment registration.",
+        },
+        error,
+      );
+      throw error;
+    }
 
-      if (!doc?.evidenceReference) {
-        return {};
-      }
+    const finalState = await loadState(caseId);
+    finalState.collected.documentsProvided = true;
+    finalState.collected.awaitingDocumentUpload = false;
+    await saveState(caseId, finalState);
+  }
 
-      return {
-        DocumentFile: { pxAttachmentKey: doc.evidenceReference },
-        DocumentName: doc.fileName,
-        // Pega validates this against its own dropdown list, so the value is
-        // chosen from what the view actually offers.
-        DocumentType: pickDocumentType(doc.kind, doc.documentCode, allowedTypes),
-        // Pega exposes a document number, but the journey does not ask the
-        // customer for one. Sent only if a value is ever captured; an
-        // invented number would be worse than an absent one.
-        DocumentNumber: text(state.collected.documentNumber),
-        DocumentStatus: "Uploaded",
-        EvidenceReference: doc.evidenceReference,
-        UploadedByUser: doc.source === "demo" ? "Demo" : "Customer",
-      };
-    });
+  /**
+   * Bind staging uploads to the case so they appear in Pega's attachment list.
+   *
+   * `/attachments/upload` only parks the file. Pega shows it on the case after
+   * `POST /cases/{id}/attachments` with those staging IDs.
+   */
+  private async linkAttachmentsToCase(
+    caseId: string,
+    files: Array<{ attachmentId: string; fileName: string }>,
+  ): Promise<boolean> {
+    const state = await loadState(caseId);
 
-    const { data, eTag } = await this.client.requestWithMeta({
-      method: "PATCH",
-      path: `/assignments/${encodeURIComponent(assignment.ID)}/actions/${encodeURIComponent(flowActionId)}`,
-      schema: dxCaseResponseSchema,
-      correlationId: state.correlationId,
-      eTag: view.eTag ?? state.eTag,
-      body: {
-        content: restrictToAcceptedFields(
-          {
-            ...toPegaContent(state.collected, {
-              correlationId: state.correlationId,
-            }),
-            Document: documentRows,
+    try {
+      await this.client.request({
+        method: "POST",
+        path: `/cases/${encodeURIComponent(caseId)}/attachments`,
+        schema: z.unknown(),
+        correlationId: state.correlationId,
+        body: {
+          attachments: files.map((file) => ({
+            type: "File",
+            category: "File",
+            ID: file.attachmentId,
+            name: file.fileName,
+          })),
+        },
+      });
+      return true;
+    } catch (batchError) {
+      logServerError(
+        {
+          scope: "pega",
+          correlationId: state.correlationId,
+          caseId,
+          detail: `Batch case-level attach failed; trying each file. IDs: ${files.map((file) => file.attachmentId).join(", ")}`,
+        },
+        batchError,
+      );
+    }
+
+    let attached = 0;
+
+    for (const file of files) {
+      try {
+        await this.client.request({
+          method: "POST",
+          path: `/cases/${encodeURIComponent(caseId)}/attachments`,
+          schema: z.unknown(),
+          correlationId: state.correlationId,
+          body: {
+            attachments: [
+              {
+                type: "File",
+                category: "File",
+                ID: file.attachmentId,
+                name: file.fileName,
+              },
+            ],
           },
-          view.acceptedFields,
-          view.knownFields,
-        ),
-      },
-    });
+        });
+        attached += 1;
+      } catch (error) {
+        logServerError(
+          {
+            scope: "pega",
+            correlationId: state.correlationId,
+            caseId,
+            detail: `Could not attach ${file.fileName} (${file.attachmentId}) to the case.`,
+          },
+          error,
+        );
+      }
+    }
 
-    await saveState(caseId, recordObservation(state, data.data.caseInfo, eTag));
+    return attached > 0;
+  }
+
+  private async listCaseAttachments(caseId: string) {
+    const state = await loadState(caseId);
+
+    try {
+      const data = await this.client.request({
+        method: "GET",
+        path: `/cases/${encodeURIComponent(caseId)}/attachments`,
+        schema: dxAttachmentListSchema,
+        correlationId: state.correlationId,
+      });
+      return data.attachments ?? [];
+    } catch (error) {
+      logServerError(
+        {
+          scope: "pega",
+          correlationId: state.correlationId,
+          caseId,
+          detail: "Could not list case attachments.",
+        },
+        error,
+      );
+      return [];
+    }
   }
 
   /**
@@ -1055,6 +1262,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   async getMessages(): Promise<AssistantMessage[]> {
     return [];
   }
+
 
   /** Internal timeline derived from Pega's own stage history. */
   async getEvents(caseId: string): Promise<DemoExecutionEvent[]> {
@@ -1116,7 +1324,161 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         Object.keys(data.uiResources?.resources?.fields ?? {}).filter(notReserved),
       ),
       fields: data.uiResources?.resources?.fields ?? {},
+      content: (data.data.caseInfo.content ?? {}) as Record<string, unknown>,
     };
+  }
+
+  /**
+   * Read a case-wide action (for example Edit details) so
+   * CustomerOnboardingName can be written after case create.
+   */
+  private async readCaseAction(caseId: string, actionId: string) {
+    const { data, eTag } = await this.client.requestWithMeta({
+      method: "GET",
+      query: { viewType: "form" },
+      path: `/cases/${encodeURIComponent(caseId)}/actions/${encodeURIComponent(actionId)}`,
+      schema: dxCaseResponseSchema,
+    });
+
+    const notReserved = (key: string) =>
+      !PEGA_RESERVED_PREFIXES.some((prefix) => key.startsWith(prefix));
+
+    return {
+      eTag,
+      acceptedFields: new Set(
+        Object.keys(data.data.caseInfo.content ?? {}).filter(notReserved),
+      ),
+      knownFields: new Set(
+        Object.keys(data.uiResources?.resources?.fields ?? {}).filter(notReserved),
+      ),
+    };
+  }
+
+  /**
+   * Write first + last name onto Pega's CustomerOnboardingName.
+   *
+   * CreateCaseRecord is the only flow action that used to accept the
+   * property, and it has already run before the website captures the name.
+   * PATCH `/cases/{id}` returns 405 here. The DX case action
+   * `pyUpdateCaseDetails` is the supported write.
+   */
+  private async syncCustomerOnboardingName(caseId: string): Promise<void> {
+    const state = await loadState(caseId);
+    const firstName = text(state.collected.firstName) ?? "";
+    const lastName = text(state.collected.lastName) ?? "";
+    const fullName = formatFullName({ firstName, lastName });
+
+    if (!fullName) {
+      return;
+    }
+
+    const latest = await this.readCase(caseId);
+    const actionIds = [
+      "pyUpdateCaseDetails",
+      ...(latest.caseInfo.availableActions ?? []).map((action) => action.ID),
+    ].filter(
+      (actionId, index, all) =>
+        Boolean(actionId) &&
+        !/changestage|change.?stage/i.test(actionId) &&
+        all.indexOf(actionId) === index,
+    );
+
+    const nameContent: Record<string, unknown> = {
+      CustomerOnboardingName: fullName,
+      Applicant: {
+        ApplicantName: fullName,
+        FirstName: firstName || undefined,
+        LastName: lastName || undefined,
+      },
+    };
+
+    for (const actionId of actionIds) {
+      try {
+        let eTag = latest.state.eTag;
+        let content: Record<string, unknown> = {
+          CustomerOnboardingName: fullName,
+        };
+
+        try {
+          const view = await this.readCaseAction(caseId, actionId);
+          eTag = view.eTag ?? eTag;
+          const filtered = restrictToAcceptedFields(
+            nameContent,
+            view.acceptedFields,
+            view.knownFields,
+          );
+          if (
+            view.acceptedFields.has("CustomerOnboardingName") ||
+            view.knownFields.has("CustomerOnboardingName")
+          ) {
+            filtered.CustomerOnboardingName = fullName;
+          }
+          content =
+            Object.keys(filtered).length > 0
+              ? filtered
+              : { CustomerOnboardingName: fullName };
+        } catch {
+          // The action may still accept a PATCH without a form view.
+        }
+
+        const { data, eTag: nextTag } = await this.client.requestWithMeta({
+          method: "PATCH",
+          path: `/cases/${encodeURIComponent(caseId)}/actions/${encodeURIComponent(actionId)}`,
+          schema: dxCaseResponseSchema,
+          correlationId: latest.state.correlationId,
+          eTag,
+          body: { content },
+        });
+        await saveState(
+          caseId,
+          recordObservation(latest.state, data.data.caseInfo, nextTag),
+        );
+        return;
+      } catch (error) {
+        logServerError(
+          {
+            scope: "pega",
+            correlationId: latest.state.correlationId,
+            caseId,
+            detail: `Case action ${actionId} did not accept CustomerOnboardingName="${fullName}".`,
+          },
+          error,
+        );
+      }
+    }
+
+    const assignment = primaryAssignment(latest.caseInfo);
+    const flowActionId = assignment?.actions?.[0]?.ID;
+
+    if (!assignment || !flowActionId) {
+      return;
+    }
+
+    try {
+      const view = await this.readAssignmentAction(assignment.ID, flowActionId);
+      const { data, eTag } = await this.client.requestWithMeta({
+        method: "PATCH",
+        path: `/assignments/${encodeURIComponent(assignment.ID)}/actions/${encodeURIComponent(flowActionId)}/save`,
+        schema: dxCaseResponseSchema,
+        correlationId: latest.state.correlationId,
+        eTag: view.eTag ?? latest.state.eTag,
+        body: { content: { CustomerOnboardingName: fullName } },
+      });
+      await saveState(
+        caseId,
+        recordObservation(latest.state, data.data.caseInfo, eTag),
+      );
+    } catch (error) {
+      logServerError(
+        {
+          scope: "pega",
+          correlationId: latest.state.correlationId,
+          caseId,
+          detail: `Could not set CustomerOnboardingName to "${fullName}".`,
+        },
+        error,
+      );
+    }
   }
 
   private async readCase(caseId: string) {
@@ -1209,11 +1571,13 @@ function restrictToAcceptedFields(
     // rejects the whole submission if a page contains a property it does not
     // define, and each case type defines a different set.
     if (Array.isArray(value)) {
-      const rows = value
-        .map((row) => filterPageProperties(row, knownFields))
-        .filter((row) => Object.keys(row).length > 0);
+      // Empty rows must keep their index. Dropping them shifts later files
+      // into Document(1), Document(2), … and Pega then reports the original
+      // slots (Board Resolution in Document(3), address proof in Document(5))
+      // as missing.
+      const rows = value.map((row) => filterPageProperties(row, knownFields));
 
-      if (rows.length > 0) {
+      if (rows.some((row) => Object.keys(row).length > 0)) {
         result[key] = rows;
       }
 
@@ -1256,6 +1620,168 @@ function allowedValuesFor(
   return (definition?.datasource?.records ?? [])
     .map((record) => record?.key)
     .filter((key): key is string => typeof key === "string" && key.length > 0);
+}
+
+/**
+ * Pega CollectAddress validates these five Document slots by label.
+ * Values are tried against the action picklist when one is present.
+ */
+const PEGA_DOCUMENT_TYPE_BY_CODE: Record<string, string[]> = {
+  INCORPORATION_CERTIFICATE: ["Certificate of Incorporation"],
+  REPRESENTATIVE_ID: ["Authorised Signatory ID", "Authorized Signatory ID"],
+  AUTHORIZATION_LETTER: [
+    "Board Resolution / Authorisation Letter",
+    "Board Resolution",
+    "Authorisation Letter",
+  ],
+  TAX_REGISTRATION: [
+    "GST / Tax Registration Certificate",
+    "GST Registration Certificate",
+  ],
+  ADDRESS_PROOF: ["Business Address Proof"],
+};
+
+function pegaDocumentType(
+  documentCode: string,
+  kind: UploadedDocument["kind"],
+  allowed: string[],
+): string | undefined {
+  const candidates = PEGA_DOCUMENT_TYPE_BY_CODE[documentCode] ?? [];
+
+  if (allowed.length > 0) {
+    for (const candidate of candidates) {
+      const exact = allowed.find(
+        (option) => option.toLowerCase() === candidate.toLowerCase(),
+      );
+      if (exact) {
+        return exact;
+      }
+
+      const partial = allowed.find((option) => {
+        const normalised = option.toLowerCase();
+        const label = candidate.toLowerCase();
+        return normalised.includes(label) || label.includes(normalised);
+      });
+      if (partial) {
+        return partial;
+      }
+    }
+
+    return pickDocumentType(kind, documentCode, allowed);
+  }
+
+  return candidates[0] ?? pickDocumentType(kind, documentCode, allowed);
+}
+
+function collectAddressAttachmentFields(
+  discovered: string[],
+  count: number,
+): string[] {
+  const ranked = [...new Set(discovered)]
+    .filter((field) => /Document\(\d+\)/.test(field))
+    .sort((left, right) => {
+      const leftIndex = Number(/Document\((\d+)\)/.exec(left)?.[1] ?? 0);
+      const rightIndex = Number(/Document\((\d+)\)/.exec(right)?.[1] ?? 0);
+      if (leftIndex !== rightIndex) {
+        return leftIndex - rightIndex;
+      }
+
+      const leftIsFile = /DocumentFile/i.test(left) ? 0 : 1;
+      const rightIsFile = /DocumentFile/i.test(right) ? 0 : 1;
+      return leftIsFile - rightIsFile;
+    });
+
+  const bySlot = new Map<number, string>();
+
+  for (const field of ranked) {
+    const slot = Number(/Document\((\d+)\)/.exec(field)?.[1] ?? 0);
+    if (slot < 1 || bySlot.has(slot)) {
+      continue;
+    }
+
+    bySlot.set(
+      slot,
+      /DocumentFile|Attach/i.test(field) ? field : `${field.replace(/\.$/, "")}.DocumentFile`,
+    );
+  }
+
+  return Array.from({ length: count }, (_, index) => {
+    const slot = index + 1;
+    return bySlot.get(slot) ?? `Document(${slot}).DocumentFile`;
+  });
+}
+
+/**
+ * Choose the CollectAddress attachment property for one uploaded document.
+ *
+ * Only returns a name the live view actually exposes. Citing a property that
+ * is not on CollectAddress (for example `BoardResolution` before it is added
+ * to the form) is `Error_Invalid_Attachment_Details`.
+ */
+export function resolvePegaAttachmentField(
+  documentCode: string,
+  discovered: string[],
+): string | undefined {
+  const intended = PEGA_EVIDENCE_FIELDS[documentCode];
+  const candidates = intended
+    ? [intended, intended.replace("Authorised", "Authorized")]
+    : [];
+  const cleaned = [...new Set(discovered)].map((field) =>
+    field.replace(/^\./, "").replace(/\.pxAttachmentKey$/i, ""),
+  );
+
+  for (const name of candidates) {
+    const exact = cleaned.find(
+      (field) =>
+        field === name ||
+        field.endsWith(`.${name}`) ||
+        field.split(".").pop()?.toLowerCase() === name.toLowerCase(),
+    );
+    if (exact) {
+      return exact;
+    }
+  }
+
+  const pageList = cleaned.find((field) => /Document\(\d+\)\.DocumentFile/i.test(field));
+  return pageList;
+}
+
+/**
+ * Bind staging uploads onto CollectAddress attachment properties.
+ *
+ * Named evidence fields (`CertificationOfIncorporation`, …) are cited by
+ * document code. If the view still uses the Document page list, files fall
+ * back to `Document(n).DocumentFile` in pack order.
+ */
+export function documentSlotPageInstructions(
+  fields: string[],
+  files: Array<{ attachmentId: string; documentCode?: string }>,
+): Array<{
+  instruction: "REPLACE";
+  target: string;
+  content: { ID: string };
+}> {
+  return files.flatMap((file, index) => {
+    const target = file.documentCode
+      ? resolvePegaAttachmentField(file.documentCode, fields)
+      : collectAddressAttachmentFields(fields, files.length)[index];
+
+    if (!target) {
+      return [];
+    }
+
+    return [
+      {
+        instruction: "REPLACE" as const,
+        target: `.${target}`,
+        content: { ID: file.attachmentId },
+      },
+    ];
+  });
+}
+
+function documentAttachmentField(fields: string[], index: number): string {
+  return collectAddressAttachmentFields(fields, index + 1)[index];
 }
 
 /**
@@ -1348,6 +1874,20 @@ const PICKLIST_FIELDS = [
   "TaxResidency",
 ] as const;
 
+function fieldIsKnown(key: string, knownFields: Set<string>): boolean {
+  if (knownFields.size === 0 || knownFields.has(key)) {
+    return true;
+  }
+
+  for (const field of knownFields) {
+    if (field.endsWith(`.${key}`) || field.split(".").pop() === key) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /** Keep only the properties of an embedded page that Pega's view defines. */
 function filterPageProperties(
   value: unknown,
@@ -1359,7 +1899,7 @@ function filterPageProperties(
 
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).filter(
-      ([key, entry]) => knownFields.has(key) && entry !== undefined,
+      ([key, entry]) => fieldIsKnown(key, knownFields) && entry !== undefined,
     ),
   );
 }
@@ -1372,6 +1912,48 @@ function filterPageProperties(
  */
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+/**
+ * Digits-only, `+`-prefixed phone number for Pega's `ValidPhoneNumber`
+ * validate — confirmed live to reject the spaced/grouped shape the phone
+ * widget stores (e.g. `+91 89688 98973`).
+ */
+function pegaPhoneNumber(value: unknown): string | undefined {
+  const raw = text(value);
+  if (!raw) {
+    return undefined;
+  }
+
+  const digits = digitsOnly(raw);
+  return digits ? `+${digits}` : undefined;
+}
+
+/**
+ * Pega's Nationality picklist on the Applicant page is a residency
+ * classification (`Indian` / `Non-Resident Indian` / `Foreign National`),
+ * not a country name — confirmed live. The intake field is free text, so a
+ * customer or sample record naming the country ("India") is mapped onto the
+ * closest valid classification; anything already matching passes through
+ * unchanged, and an unrecognised value is left as-is rather than guessed.
+ */
+function pegaNationality(value: unknown): string | undefined {
+  const raw = text(value);
+  if (!raw) {
+    return undefined;
+  }
+
+  const normalised = raw.trim().toLowerCase();
+
+  if (normalised === "india" || normalised === "indian") {
+    return "Indian";
+  }
+
+  if (normalised.includes("non-resident") || normalised === "nri") {
+    return "Non-Resident Indian";
+  }
+
+  return raw;
 }
 
 /**
@@ -1431,13 +2013,15 @@ function toPegaContent(
   // employment step, and also offered on the Applicant page below. Each
   // submission is filtered to the properties its own action exposes, so
   // sending both means whichever shape Pega asks for is the one that arrives.
-  const employment: Array<[string, string | undefined]> = [
+  //
+  // Employment step declares these as top-level case properties.
+  const alsoTopLevel: Array<[string, string | undefined]> = [
     ["EmploymentStatus", text(data.employmentStatus)],
     ["IncomeRange", text(data.incomeRange)],
     ["TaxResidency", text(data.taxResidency)],
   ];
 
-  for (const [property, value] of employment) {
+  for (const [property, value] of alsoTopLevel) {
     if (value) {
       content[property] = value;
     }
@@ -1449,11 +2033,20 @@ function toPegaContent(
     // ODHMNT-AgenticC-Data-Applicant. Names that only look right — `Email`
     // for `EmailAddress`, `Mobile` for `MobileNumber` — are dropped by the
     // field filter and the data silently never arrives.
+    //
+    // Nationality, MobileNumber and EmailAddress are nested here (not also
+    // sent top-level) — CollectIdentityInformation's view was reconfigured
+    // on the Pega side to accept them only as Applicant sub-properties.
     content.Applicant = {
       ApplicantName: fullName,
+      FirstName: firstName || undefined,
+      LastName: lastName || undefined,
       DateOfBirth: text(data.dateOfBirth),
-      Nationality: text(data.nationality),
-      MobileNumber: text(data.mobile),
+      Nationality: pegaNationality(data.nationality),
+      // Pega's ValidPhoneNumber validate rejects the "+91 89688 98973" shape
+      // the phone widget stores (spaces, and the widget's own grouping) —
+      // confirmed live. Digits-only with a leading "+" is what it accepts.
+      MobileNumber: pegaPhoneNumber(data.mobile),
       EmailAddress: text(data.email),
       TaxResidency: text(data.taxResidency),
       IdentificationNumber: text(data.documentNumber),

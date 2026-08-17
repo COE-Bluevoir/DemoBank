@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { getServerConfig } from "@/lib/config/env";
 import { isPegaConnectionConfigured } from "@/lib/onboarding/adapters";
 import { getDemoSettings, getModeOptions } from "@/lib/onboarding/engine";
+import { getTokenProvider } from "@/lib/pega/token-provider";
 
 /**
  * Which orchestrations this environment can actually run.
@@ -16,19 +18,21 @@ import { getDemoSettings, getModeOptions } from "@/lib/onboarding/engine";
 export async function GET() {
   const pegaReady = isPegaConnectionConfigured();
   const activeMode = getDemoSettings().orchestrationMode;
+  const pega = getServerConfig().pega;
 
-  const options = getModeOptions()
-    // The mock is a local development aid rather than a choice to put in front
-    // of a customer — but when it is deliberately selected it must still be
-    // listed, otherwise the switch would claim something else is running.
-    .filter((option) => option.id !== "mock-pega" || activeMode === "mock-pega")
-    .map((option) => ({
-      ...option,
-      unavailableReason:
-        option.id === "pega" && !pegaReady
-          ? "Pega is not configured in this environment."
-          : undefined,
-    }));
+  // Acquire the access token while the presenter is still choosing a journey,
+  // so the first customer click does not wait on OAuth.
+  if (pega) {
+    void getTokenProvider(pega).getAccessToken().catch(() => undefined);
+  }
+
+  const options = getModeOptions().map((option) => ({
+    ...option,
+    unavailableReason:
+      option.id === "pega" && !pegaReady
+        ? "Pega is not configured in this environment."
+        : undefined,
+  }));
 
   return NextResponse.json(
     { options, activeMode },

@@ -17,8 +17,9 @@ if (typeof window !== "undefined") {
   );
 }
 
-const DEFAULT_PEGA_TIMEOUT_MS = 12_000;
-const DEFAULT_PEGA_RETRIES = 2;
+const DEFAULT_PEGA_TIMEOUT_MS = 5_000;
+const DEFAULT_PEGA_UPLOAD_TIMEOUT_MS = 60_000;
+const DEFAULT_PEGA_RETRIES = 1;
 const DEFAULT_TOKEN_SKEW_SECONDS = 60;
 
 const booleanFromString = (defaultValue: boolean) =>
@@ -58,8 +59,7 @@ const integerFromString = (defaultValue: number, min: number, max: number) =>
 const envSchema = z.object({
   ORCHESTRATION_MODE: z
     .enum(["mock-pega", "pega", "non-pega"])
-    .optional()
-    .default("mock-pega"),
+    .optional(),
   DEMO_SCENARIO: z
     .enum(["ADDRESS_PEP_REVIEW", "HAPPY_PATH", "SERVICE_TIMEOUT"])
     .optional()
@@ -73,6 +73,11 @@ const envSchema = z.object({
   PEGA_CLIENT_SECRET: z.string().min(1).optional(),
   PEGA_CASE_TYPE_ID: z.string().min(1).optional().default("ODHMNT-AgenticC-Work-CustomerOnboardingUnified"),
   PEGA_TIMEOUT_MS: integerFromString(DEFAULT_PEGA_TIMEOUT_MS, 1_000, 60_000),
+  PEGA_UPLOAD_TIMEOUT_MS: integerFromString(
+    DEFAULT_PEGA_UPLOAD_TIMEOUT_MS,
+    5_000,
+    180_000,
+  ),
   PEGA_MAX_RETRIES: integerFromString(DEFAULT_PEGA_RETRIES, 0, 5),
   PEGA_TOKEN_SKEW_SECONDS: integerFromString(DEFAULT_TOKEN_SKEW_SECONDS, 0, 600),
 
@@ -130,6 +135,8 @@ export interface PegaConnectionConfig {
   clientSecret: string;
   caseTypeId: string;
   timeoutMs: number;
+  /** Multipart `/attachments/upload` can exceed the DX JSON timeout. */
+  uploadTimeoutMs: number;
   maxRetries: number;
   tokenSkewSeconds: number;
 }
@@ -148,7 +155,7 @@ export interface AgentConfig {
 }
 
 export interface ServerConfig {
-  orchestrationMode: RawServerEnv["ORCHESTRATION_MODE"];
+  orchestrationMode: NonNullable<RawServerEnv["ORCHESTRATION_MODE"]>;
   defaultScenarioId: RawServerEnv["DEMO_SCENARIO"];
   demoControlEnabled: boolean;
   demoControlPasscode: string;
@@ -201,6 +208,7 @@ function buildPegaConfig(env: RawServerEnv): {
       clientSecret: env.PEGA_CLIENT_SECRET!,
       caseTypeId: env.PEGA_CASE_TYPE_ID,
       timeoutMs: env.PEGA_TIMEOUT_MS,
+      uploadTimeoutMs: env.PEGA_UPLOAD_TIMEOUT_MS,
       maxRetries: env.PEGA_MAX_RETRIES,
       tokenSkewSeconds: env.PEGA_TOKEN_SKEW_SECONDS,
     },
@@ -251,7 +259,11 @@ function loadConfig(source: EnvSource): ServerConfig {
   }
 
   return {
-    orchestrationMode: env.ORCHESTRATION_MODE,
+    // Live Pega is the intended path whenever the connection exists. The mock
+    // remains available only when it is requested explicitly, or when this
+    // environment has no Pega credentials at all.
+    orchestrationMode:
+      env.ORCHESTRATION_MODE ?? (pega ? "pega" : "mock-pega"),
     defaultScenarioId: env.DEMO_SCENARIO,
     demoControlEnabled: env.DEMO_CONTROL_ENABLED,
     demoControlPasscode: env.DEMO_CONTROL_PASSCODE,

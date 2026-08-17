@@ -13,6 +13,7 @@ const config: PegaConnectionConfig = {
   clientSecret: "client-secret",
   caseTypeId: "NorthStar-Onboarding",
   timeoutMs: 5000,
+  uploadTimeoutMs: 60_000,
   maxRetries: 2,
   tokenSkewSeconds: 60,
 };
@@ -202,10 +203,14 @@ describe("Pega HTTP client", () => {
   it("reports a timeout distinctly so the UI can show a saved-application message", async () => {
     const timeout = new Error("The operation was aborted due to timeout");
     timeout.name = "TimeoutError";
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(timeout);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(timeout);
 
     await expect(
       client().request({ method: "GET", path: "/cases/ONB-1", schema }),
     ).rejects.toMatchObject({ kind: "TIMEOUT", statusCode: 504 });
+
+    // Timeouts are not retried: waiting the full budget again would make a
+    // slow connection look even slower.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

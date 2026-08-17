@@ -154,11 +154,33 @@ export const dxErrorSchema = z
   })
   .loose();
 
-export const dxAttachmentUploadSchema = z
+export const dxAttachmentUploadSchema = z.preprocess((value) => {
+  if (Array.isArray(value) && value[0] && typeof value[0] === "object") {
+    return value[0];
+  }
+
+  if (value && typeof value === "object" && "attachments" in value) {
+    const attachments = (value as { attachments?: unknown }).attachments;
+    if (Array.isArray(attachments) && attachments[0]) {
+      return attachments[0];
+    }
+  }
+
+  return value;
+}, z
   .object({
-    ID: z.string(),
+    ID: z.string().optional(),
+    id: z.string().optional(),
+    pzInsKey: z.string().optional(),
   })
-  .loose();
+  .loose()
+  .transform((value) => {
+    const ID = value.ID ?? value.id ?? value.pzInsKey;
+    if (!ID) {
+      throw new Error("Attachment upload did not return an ID.");
+    }
+    return { ID };
+  }));
 
 export const dxAttachmentListSchema = z
   .object({

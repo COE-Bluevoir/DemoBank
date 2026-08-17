@@ -63,12 +63,6 @@ export const MODE_OPTIONS: Array<{
   description: string;
 }> = [
   {
-    id: "mock-pega",
-    label: "Mock Pega",
-    description:
-      "Deterministic stand-in for the Pega path. Runs locally with no external dependency.",
-  },
-  {
     id: "pega",
     label: "Pega",
     description:
@@ -133,11 +127,11 @@ export const CASE_PROGRESS_STEPS = [
 ] as const;
 
 /**
- * The organisation the demo onboards.
+ * Organisation named on the sample evidence files.
  *
- * Taken from the supplied sample documents rather than the storyline prose:
- * the incorporation certificate, GST certificate and bills all name Sunspire
- * Retail, and extraction is checked against what the files actually say.
+ * Used as extraction ground truth for those documents only. The live Pega
+ * case name is the applicant first and last name captured on the form, not
+ * this value.
  */
 export const DEMO_ORGANISATION = {
   legalName: "Sunspire Retail Private Limited",

@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { ShieldCheck } from "lucide-react";
 
 import { AssistantPanel } from "@/components/assistant-panel";
@@ -20,71 +20,49 @@ import { SuccessSummary } from "@/components/success-summary";
 import { RoutineReviewStatus } from "@/components/routine-review-status";
 import { VerificationProgress } from "@/components/verification-progress";
 import { Badge, Button, Card, SelectInput, TextInput } from "@/components/ui";
+import { PhoneNumberInput } from "@/components/phone-number-input";
 import { getIndustryPack } from "@/lib/industry/registry";
 import type { IndustryPack } from "@/lib/industry/types";
 import { applicantSchema } from "@/lib/onboarding/schemas";
 import type {
   ApplicantView,
-  DocumentKind,
   OnboardingCaseView,
 } from "@/lib/onboarding/types";
 import { formatDateTime } from "@/lib/onboarding/utils";
 
-// Country calling codes offered on the mobile field. India is first and
-// what the field falls back to when the stored value carries no known
-// prefix, so a fresh application starts with +91 already selected.
-const COUNTRY_CODES = [
-  { code: "+91", label: "India +91" },
-  { code: "+1", label: "US/Canada +1" },
-  { code: "+44", label: "UK +44" },
-  { code: "+971", label: "UAE +971" },
-  { code: "+65", label: "Singapore +65" },
-] as const;
+function keepDocumentStep(
+  previous: OnboardingCaseView,
+  next: OnboardingCaseView,
+): OnboardingCaseView {
+  if (
+    next.status === "VERIFYING_DOCUMENTS" ||
+    next.status === "SCREENING_IN_PROGRESS" ||
+    next.status === "ROUTINE_REVIEW" ||
+    next.status === "CREATING_CUSTOMER" ||
+    next.status === "COMPLETED"
+  ) {
+    return next;
+  }
 
-function splitPhone(value: string | undefined): { code: string; number: string } {
-  const trimmed = (value ?? "").trim();
-  const match = COUNTRY_CODES.find((entry) => trimmed.startsWith(entry.code));
+  const alreadyCollectingDocuments =
+    previous.status === "DOCUMENTS_REQUIRED" ||
+    (previous.documents?.length ?? 0) > 0;
+  const refreshDroppedToDetails =
+    next.status === "INFORMATION_REQUIRED" || next.status === "STARTED";
 
-  return match
-    ? { code: match.code, number: trimmed.slice(match.code.length).trim() }
-    : { code: COUNTRY_CODES[0].code, number: trimmed };
-}
+  if (!alreadyCollectingDocuments || !refreshDroppedToDetails) {
+    return next;
+  }
 
-// Fully derived from the combined `mobile` string rather than local state,
-// so it can never drift out of sync with a form.reset (e.g. loading an
-// existing applicant) or with react-hook-form's own value.
-function PhoneField({
-  value,
-  onChange,
-}: {
-  value: string | undefined;
-  onChange: (value: string) => void;
-}) {
-  const { code, number } = splitPhone(value);
-
-  return (
-    <div className="flex gap-2">
-      <SelectInput
-        aria-label="Country code"
-        className="w-30 flex-none px-2"
-        value={code}
-        onChange={(event) => onChange(`${event.target.value} ${number}`.trim())}
-      >
-        {COUNTRY_CODES.map((entry) => (
-          <option key={entry.code} value={entry.code}>
-            {entry.code}
-          </option>
-        ))}
-      </SelectInput>
-      <TextInput
-        type="tel"
-        className="flex-1"
-        placeholder="90000 00000"
-        value={number}
-        onChange={(event) => onChange(`${code} ${event.target.value}`.trim())}
-      />
-    </div>
-  );
+  return {
+    ...next,
+    status: "DOCUMENTS_REQUIRED",
+    applicant: next.applicant ?? previous.applicant,
+    documents:
+      next.documents && next.documents.length > 0
+        ? next.documents
+        : previous.documents,
+  };
 }
 
 function ApplicantForm({
@@ -126,20 +104,33 @@ function ApplicantForm({
           {fields.map((field) => {
             const error = form.formState.errors[field.key]?.message;
 
-            return (
+            return field.key === "mobile" ? (
+              <div key={field.key} className="space-y-2 text-sm md:col-span-2">
+                <span className="font-medium text-[var(--color-ink)]">
+                  {field.label}
+                </span>
+                <Controller
+                  name="mobile"
+                  control={form.control}
+                  render={({ field: mobileField }) => (
+                    <PhoneNumberInput
+                      name={mobileField.name}
+                      value={mobileField.value ?? ""}
+                      onBlur={mobileField.onBlur}
+                      onChange={mobileField.onChange}
+                    />
+                  )}
+                />
+                {error ? (
+                  <span className="text-xs text-[var(--color-error)]">{error}</span>
+                ) : null}
+              </div>
+            ) : (
               <label key={field.key} className="space-y-2 text-sm">
                 <span className="font-medium text-[var(--color-ink)]">
                   {field.label}
                 </span>
-                {field.key === "mobile" ? (
-                  <Controller
-                    control={form.control}
-                    name={field.key}
-                    render={({ field: rhf }) => (
-                      <PhoneField value={rhf.value} onChange={rhf.onChange} />
-                    )}
-                  />
-                ) : field.options ? (
+                {field.options ? (
                   <SelectInput {...form.register(field.key)}>
                     <option value="">Select</option>
                     {field.options.map((option) => (
@@ -161,6 +152,14 @@ function ApplicantForm({
         <div className="flex gap-3">
           <Button type="submit" disabled={busy}>
             Save and continue
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => form.reset(pack.sampleApplicant)}
+          >
+            Fill with sample data
           </Button>
         </div>
       </form>
@@ -186,7 +185,7 @@ export function OnboardingFlow({
   );
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState<{
-    kind: DocumentKind;
+    documentCode: string;
     progress: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -226,7 +225,7 @@ export function OnboardingFlow({
       return;
     }
 
-    setCaseData(payload);
+    setCaseData((previous) => keepDocumentStep(previous, payload));
     setError(null);
   }, [caseData.caseId]);
 
@@ -294,7 +293,7 @@ export function OnboardingFlow({
       return;
     }
 
-    setUploading({ kind, progress: 20 });
+    setUploading({ documentCode: requirement.code, progress: 20 });
     setBusy(true);
     setError(null);
 
@@ -309,7 +308,7 @@ export function OnboardingFlow({
         body: formData,
       });
 
-      setUploading({ kind, progress: 68 });
+      setUploading({ documentCode: requirement.code, progress: 68 });
       const payload = await response.json();
 
       if (!response.ok) {
@@ -317,7 +316,27 @@ export function OnboardingFlow({
         return;
       }
 
-      setUploading({ kind, progress: 100 });
+      setUploading({ documentCode: requirement.code, progress: 100 });
+      setCaseData((previous) => ({
+        ...previous,
+        status: "DOCUMENTS_REQUIRED",
+        documents: [
+          ...(previous.documents ?? []).filter(
+            (item) => item.documentCode !== requirement.code,
+          ),
+          {
+            documentId: payload.documentId,
+            documentCode: requirement.code,
+            kind,
+            fileName: payload.fileName ?? file.name,
+            fileType: file.type,
+            fileSize: file.size,
+            status: "UPLOADED",
+            source: "upload",
+            evidenceReference: payload.evidenceReference ?? payload.documentId,
+          },
+        ],
+      }));
       await refreshCase();
     } finally {
       window.setTimeout(() => setUploading(null), 350);
@@ -394,6 +413,7 @@ export function OnboardingFlow({
             )
           }
           onUseDemoDocuments={() => submitAction("USE_DEMO_DOCUMENTS")}
+          onContinue={() => submitAction("CONTINUE_DOCUMENTS")}
         />
       );
     }

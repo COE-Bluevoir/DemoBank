@@ -55,8 +55,12 @@ export function AcceleratorConsole({ packs }: { packs: IndustryPack[] }) {
         setMode(
           (
             available.find(
+              (option: OrchestrationChoice) => option.id === "pega",
+            ) ??
+            available.find(
               (option: OrchestrationChoice) => option.id === payload.activeMode,
-            ) ?? available[0]
+            ) ??
+            available[0]
           )?.id ?? null,
         );
       } catch {

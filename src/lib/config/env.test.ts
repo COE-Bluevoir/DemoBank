@@ -25,7 +25,16 @@ describe("server configuration", () => {
 
     expect(config.pega).toBeDefined();
     expect(config.pega?.clientId).toBe("client-id");
+    expect(config.pega?.timeoutMs).toBe(5000);
+    expect(config.pega?.uploadTimeoutMs).toBe(60_000);
+    expect(config.pega?.maxRetries).toBe(1);
     expect(config.pegaConfigurationIssues).toHaveLength(0);
+  });
+
+  it("defaults to live Pega when the connection is configured", () => {
+    const config = loadServerConfigFrom(PEGA_ENV);
+
+    expect(config.orchestrationMode).toBe("pega");
   });
 
   it("strips a trailing slash from the base URL so paths join cleanly", () => {

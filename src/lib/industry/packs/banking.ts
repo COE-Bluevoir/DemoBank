@@ -26,7 +26,6 @@ export const bankingPack: IndustryPack = {
         "Confirms the company exists and states its registered office.",
       mandatory: true,
       sampleFile: "D01_company_incorporation_certificate.png",
-      pegaAttachmentCategory: "CertificationOfIncorporation",
     },
     {
       code: "REPRESENTATIVE_ID",
@@ -36,7 +35,6 @@ export const bankingPack: IndustryPack = {
         "Identity evidence for the person authorised to open the account.",
       mandatory: true,
       sampleFile: "D02_authorized_signatory_sample_id.png",
-      pegaAttachmentCategory: "AuthorisedSignatoryIdentity",
     },
     {
       code: "AUTHORIZATION_LETTER",
@@ -46,7 +44,6 @@ export const bankingPack: IndustryPack = {
         "Confirms the signatory is authorised to open the account on the company's behalf.",
       mandatory: true,
       sampleFile: "D04_board_resolution_authorized_signatory.png",
-      pegaAttachmentCategory: "BoardResolution",
     },
     {
       code: "TAX_REGISTRATION",
@@ -55,7 +52,6 @@ export const bankingPack: IndustryPack = {
       description: "GST registration for the business.",
       mandatory: true,
       sampleFile: "D03_tax_registration_certificate.png",
-      pegaAttachmentCategory: "TaxRegistrationCertificate",
     },
     {
       code: "ADDRESS_PROOF",
@@ -65,7 +61,6 @@ export const bankingPack: IndustryPack = {
         "A recent utility or telephone bill showing the business address.",
       mandatory: true,
       sampleFile: "B04_telephone_bill_address_mismatch.png",
-      pegaAttachmentCategory: "BusinessAddressProof",
     },
   ],
 
@@ -155,19 +150,19 @@ export const bankingPack: IndustryPack = {
   ],
 
   sampleApplicant: {
-    firstName: "Ananya",
-    lastName: "Rao",
-    dateOfBirth: "1992-08-14",
+    firstName: "Arjun",
+    lastName: "Mehta",
+    dateOfBirth: "1991-08-14",
     nationality: "Indian",
-    mobile: "+91 90000 00000",
-    email: "ananya.rao@example.test",
-    addressLine1: "18 Lake View Road",
-    city: "Hyderabad",
-    region: "Telangana",
-    postalCode: "500081",
+    mobile: "+91 89688 98973",
+    email: "arjun.mehta@gmail.com",
+    addressLine1: "Flat 4B, Lake View Residency",
+    city: "Bengaluru",
+    region: "Karnataka",
+    postalCode: "560038",
     country: "India",
-    employmentStatus: "Salaried",
-    incomeRange: "INR 10-15 lakh per annum",
+    employmentStatus: "Self-employed",
+    incomeRange: "INR 15 lakh+ per annum",
     taxResidency: "India",
   },
 };

@@ -560,7 +560,16 @@ function newCase(
 }
 
 export function getDemoSettings() {
-  return readStore().settings;
+  const settings = readStore().settings;
+  const config = getServerConfig();
+
+  // A leftover mock selection from an earlier local run must not keep traffic
+  // off live Pega once the connection is actually configured.
+  if (settings.orchestrationMode === "mock-pega" && config.pega) {
+    return updateMode("pega");
+  }
+
+  return settings;
 }
 
 export function getScenarioOptions() {
@@ -770,6 +779,14 @@ export function submitCaseAction(caseId: string, request: SubmitCaseActionReques
           status: "SUCCEEDED",
           summary: "Bundled fictional demo documents were attached to the case.",
         });
+        beginVerification(caseRecord);
+        break;
+      }
+      case "CONTINUE_DOCUMENTS": {
+        if (caseRecord.documents.length === 0) {
+          throw new EngineError("Upload at least one document before continuing.", 422);
+        }
+        caseRecord.lastBackendAction = "CONTINUE_DOCUMENTS";
         beginVerification(caseRecord);
         break;
       }

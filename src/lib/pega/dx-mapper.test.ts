@@ -92,6 +92,29 @@ describe("DX v2 stage mapping", () => {
     }
   });
 
+  it("stays on documents after consent while Pega is still on Capture Details", () => {
+    const info = caseInfo({
+      stageID: "PRIM1",
+      stageLabel: "Capture Details",
+      assignments: [
+        {
+          ID: "ASSIGN-WORKBASKET X!CAPTUREDETAILS_FLOW",
+          name: "Collect Address",
+          actions: [{ ID: "CollectAddress", name: "Collect Address" }],
+        },
+      ],
+    });
+
+    expect(
+      mapDxStatus(info, {
+        accepted: true,
+        documents: [{ fileName: "id.png" }],
+        awaitingDocumentUpload: true,
+        documentsProvided: false,
+      }),
+    ).toBe("DOCUMENTS_REQUIRED");
+  });
+
   it("treats a resolved-completed case as complete whatever the stage says", () => {
     expect(
       mapDxStatus(

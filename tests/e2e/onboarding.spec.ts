@@ -1,17 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  selectOrchestrationMode,
   selectScenario,
   unlockDemoControl,
 } from "./demo-control";
 
 test("happy-path onboarding can complete", async ({ page }) => {
   await unlockDemoControl(page);
-  await selectOrchestrationMode(page, "mock-pega");
   await selectScenario(page, "HAPPY_PATH");
 
-  await page.goto("/onboarding/start");
+  await page.goto("/onboarding/start?mode=mock-pega");
   await page.getByRole("button", { name: "Begin application" }).click();
   await page.getByLabel("First name").fill("Ananya");
   await page.getByLabel("Last name").fill("Rao");
@@ -40,9 +38,8 @@ test("happy-path onboarding can complete", async ({ page }) => {
 
 test("address mismatch requires explicit confirmation", async ({ page }) => {
   await unlockDemoControl(page);
-  await selectOrchestrationMode(page, "mock-pega");
   await selectScenario(page, "ADDRESS_PEP_REVIEW");
-  await page.goto("/onboarding/start");
+  await page.goto("/onboarding/start?mode=mock-pega");
   await page.getByRole("button", { name: "Begin application" }).click();
   await page.getByLabel("First name").fill("Ananya");
   await page.getByLabel("Last name").fill("Rao");
@@ -74,11 +71,10 @@ test("address mismatch requires explicit confirmation", async ({ page }) => {
 
 test("routine review can be cleared from demo control", async ({ page, context }) => {
   await unlockDemoControl(page);
-  await selectOrchestrationMode(page, "mock-pega");
   await selectScenario(page, "ADDRESS_PEP_REVIEW");
 
   const customerPage = await context.newPage();
-  await customerPage.goto("/onboarding/start");
+  await customerPage.goto("/onboarding/start?mode=mock-pega");
   await customerPage.getByRole("button", { name: "Begin application" }).click();
   await customerPage.getByLabel("First name").fill("Ananya");
   await customerPage.getByLabel("Last name").fill("Rao");
@@ -111,7 +107,7 @@ test("routine review can be cleared from demo control", async ({ page, context }
 });
 
 test("refresh resumes the persisted case", async ({ page }) => {
-  await page.goto("/onboarding/start");
+  await page.goto("/onboarding/start?mode=mock-pega");
   await page.getByRole("button", { name: "Begin application" }).click();
   await page.getByLabel("First name").fill("Ananya");
   await page.getByLabel("Last name").fill("Rao");
@@ -121,9 +117,8 @@ test("refresh resumes the persisted case", async ({ page }) => {
 
 test("service timeout shows a customer-safe error", async ({ page }) => {
   await unlockDemoControl(page);
-  await selectOrchestrationMode(page, "mock-pega");
   await selectScenario(page, "SERVICE_TIMEOUT");
-  await page.goto("/onboarding/start");
+  await page.goto("/onboarding/start?mode=mock-pega");
   await page.getByRole("button", { name: "Begin application" }).click();
   await page.getByLabel("First name").fill("Ananya");
   await page.getByLabel("Last name").fill("Rao");
@@ -150,7 +145,7 @@ test("service timeout shows a customer-safe error", async ({ page }) => {
 
 test("demo-control APIs reject unauthorised access", async ({ request }) => {
   const response = await request.post("/api/demo/mode", {
-    data: { orchestrationMode: "mock-pega" },
+    data: { orchestrationMode: "pega" },
   });
   expect(response.status()).toBe(401);
 });

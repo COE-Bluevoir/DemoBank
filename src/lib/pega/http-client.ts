@@ -137,6 +137,16 @@ export class PegaHttpClient {
       options.fileName,
     );
 
+    if (options.path.includes("/cases/")) {
+      form.append(
+        "file",
+        new Blob([options.content as BlobPart], { type: options.contentType }),
+        options.fileName,
+      );
+      form.append("category", "File");
+      form.append("type", "File");
+    }
+
     const headers = new Headers({
       Authorization: `Bearer ${await this.tokenProvider.getAccessToken()}`,
       Accept: "application/json",
@@ -154,7 +164,7 @@ export class PegaHttpClient {
         headers,
         body: form,
         cache: "no-store",
-        signal: AbortSignal.timeout(this.config.timeoutMs),
+        signal: AbortSignal.timeout(this.config.uploadTimeoutMs),
       });
     } catch (error) {
       const timedOut =

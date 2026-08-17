@@ -143,6 +143,28 @@ export function mapDxStatus(
     return "DOCUMENTS_REQUIRED";
   }
 
+  // Website order is consent → documents. Pega often stays on Capture Details
+  // / CollectAddress after consent because that step also demands attachments.
+  // Once the customer has accepted, or has already uploaded a file, keep them
+  // on the document screen instead of looping the empty details form.
+  const hasLocalDocuments =
+    Array.isArray(collected?.documents) && collected.documents.length > 0;
+
+  if (
+    (collected?.accepted === true || hasLocalDocuments) &&
+    collected?.documentsProvided !== true &&
+    (stageStatus === "INFORMATION_REQUIRED" || stageStatus === "STARTED")
+  ) {
+    return "DOCUMENTS_REQUIRED";
+  }
+
+  if (
+    collected?.documentsProvided === true &&
+    (stageStatus === "INFORMATION_REQUIRED" || stageStatus === "STARTED")
+  ) {
+    return "VERIFYING_DOCUMENTS";
+  }
+
   // Likewise, an open assignment asking for details or consent means the
   // customer must supply information, whatever stage it happens to sit in.
   // Pega may sequence consent earlier than the website presents it.
@@ -275,13 +297,20 @@ function mapDocuments(
   caseInfo: DxCaseInfo,
   collected: Record<string, unknown> | undefined,
 ): DocumentView[] | undefined {
+  const uploaded = collectedDocuments(collected);
+
+  // The website list is keyed by documentCode. Prefer it over Pega's page
+  // list, which can repeat the first file when an attachment control and
+  // Document(1) both cite the same upload.
+  if (uploaded && uploaded.length > 0) {
+    return uploaded;
+  }
+
   const documents = caseInfo.content?.Document;
 
   if (!Array.isArray(documents) || documents.length === 0) {
-    return collectedDocuments(collected);
+    return undefined;
   }
-
-  const uploaded = collectedDocuments(collected) ?? [];
 
   return documents.flatMap((entry): DocumentView[] => {
     if (!entry || typeof entry !== "object") {
@@ -290,19 +319,21 @@ function mapDocuments(
 
     const record = entry as Record<string, unknown>;
     const fileName = String(record.DocumentName ?? "");
-    const known = uploaded.find((item) => item.fileName === fileName);
+
+    if (!fileName) {
+      return [];
+    }
 
     return [
       {
         documentId: String(record.pyGUID ?? fileName),
-        kind: known?.kind ?? "IDENTITY",
+        kind: "IDENTITY",
         fileName,
-        fileType: known?.fileType ?? "application/pdf",
-        fileSize: known?.fileSize ?? 0,
+        fileType: "application/pdf",
+        fileSize: 0,
         status: "UPLOADED",
-        source: known?.source ?? "upload",
-        evidenceReference: known?.evidenceReference ?? "",
-        storageReference: known?.storageReference,
+        source: "upload",
+        evidenceReference: "",
       },
     ];
   });
@@ -479,7 +510,7 @@ export function mapDxCaseToView(
     customerSafeStatus: CUSTOMER_SAFE_STATUS[status],
     currentAction: buildCurrentAction(caseInfo, status),
     progress: buildProgress(status),
-    applicant: mapApplicant(caseInfo) ?? collectedApplicant(context.collected),
+    applicant: collectedApplicant(context.collected) ?? mapApplicant(caseInfo),
     documents: mapDocuments(caseInfo, context.collected),
     // Pega drives the journey; conversational messages are a mock-mode concept
     // and are intentionally not synthesised from case data.

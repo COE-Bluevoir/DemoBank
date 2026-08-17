@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 
 import { getDynamoClient, requireAwsConfig } from "@/lib/aws/clients";
@@ -41,7 +44,7 @@ export interface PegaCaseStateStore {
 /** Retain case state for 30 days, well beyond any onboarding journey. */
 const TTL_SECONDS = 30 * 24 * 60 * 60;
 
-/** In-process store. Correct for local development and for tests. */
+/** In-process store. Correct for tests. */
 export class InMemoryPegaCaseStateStore implements PegaCaseStateStore {
   private readonly states = new Map<string, PegaCaseState>();
 
@@ -55,6 +58,64 @@ export class InMemoryPegaCaseStateStore implements PegaCaseStateStore {
 
   async clear(): Promise<void> {
     this.states.clear();
+  }
+}
+
+function canonicalCaseId(caseId: string): string {
+  try {
+    return decodeURIComponent(caseId);
+  } catch {
+    return caseId;
+  }
+}
+
+/**
+ * Disk-backed store for local development.
+ *
+ * The live Pega adapter keeps website sequencing (consent, uploaded files,
+ * which step the customer is on) here because Pega's Collect Address step
+ * still looks like "capture details". An in-memory map is wiped every time
+ * Next.js recompiles, which sent the customer back to an empty form after
+ * the first upload.
+ */
+export class FilePegaCaseStateStore implements PegaCaseStateStore {
+  constructor(
+    private readonly directory: string = path.join(
+      process.cwd(),
+      ".demo-data",
+      "pega-cases",
+    ),
+  ) {}
+
+  async get(caseId: string): Promise<PegaCaseState | undefined> {
+    const filePath = this.filePath(caseId);
+
+    if (!fs.existsSync(filePath)) {
+      return undefined;
+    }
+
+    return JSON.parse(fs.readFileSync(filePath, "utf8")) as PegaCaseState;
+  }
+
+  async put(caseId: string, state: PegaCaseState): Promise<void> {
+    fs.mkdirSync(this.directory, { recursive: true });
+
+    const filePath = this.filePath(caseId);
+    const temporary = `${filePath}.${process.pid}.tmp`;
+
+    fs.writeFileSync(temporary, JSON.stringify(state, null, 2));
+    fs.renameSync(temporary, filePath);
+  }
+
+  async clear(): Promise<void> {
+    fs.rmSync(this.directory, { recursive: true, force: true });
+  }
+
+  private filePath(caseId: string): string {
+    return path.join(
+      this.directory,
+      `${encodeURIComponent(canonicalCaseId(caseId))}.json`,
+    );
   }
 }
 
@@ -124,10 +185,13 @@ let store: PegaCaseStateStore | undefined;
 
 export function getPegaCaseStateStore(): PegaCaseStateStore {
   if (!store) {
-    store =
-      getServerConfig().storageDriver === "aws"
-        ? new DynamoPegaCaseStateStore()
-        : new InMemoryPegaCaseStateStore();
+    if (getServerConfig().storageDriver === "aws") {
+      store = new DynamoPegaCaseStateStore();
+    } else if (process.env.VITEST) {
+      store = new InMemoryPegaCaseStateStore();
+    } else {
+      store = new FilePegaCaseStateStore();
+    }
   }
 
   return store;

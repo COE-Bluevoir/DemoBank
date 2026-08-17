@@ -20,6 +20,16 @@ export async function POST(request: NextRequest) {
   try {
     const payload = modeSchema.parse(await request.json());
 
+    if (payload.orchestrationMode === "mock-pega") {
+      return NextResponse.json(
+        {
+          message:
+            "Mock Pega is no longer selectable. Choose live Pega or AWS.",
+        },
+        { status: 409 },
+      );
+    }
+
     // Selecting live Pega without a configured connection would silently run
     // the mock engine and make a broken integration look healthy.
     if (payload.orchestrationMode === "pega" && !isPegaConnectionConfigured()) {

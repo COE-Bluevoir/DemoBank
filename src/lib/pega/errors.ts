@@ -51,7 +51,6 @@ const HTTP_STATUS: Record<PegaFailureKind, number> = {
 const RETRYABLE: ReadonlySet<PegaFailureKind> = new Set<PegaFailureKind>([
   "RATE_LIMITED",
   "UNAVAILABLE",
-  "TIMEOUT",
 ]);
 
 export class PegaIntegrationError extends Error {

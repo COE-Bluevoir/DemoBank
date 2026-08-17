@@ -41,18 +41,11 @@ export function AssistantChat({
   // on its first reply. Opaque to this component — only ever carried, never
   // inspected. Absent for providers that don't use one.
   const [conversationId, setConversationId] = useState<string | undefined>();
-  // Minted once, before the first message — unlike conversationId, a
-  // provider may need a stable, non-empty anchor from turn one, before it
-  // has replied even once. useState's initializer runs once per mount, so
-  // every message in this widget's lifetime carries the same value.
-  const [sessionId] = useState(() => crypto.randomUUID());
-  // Presenter-facing override of which backend answers. Defaults to the
-  // built-in guide — reliable and config-driven — since Pega's live
-  // conversational channel is a separate integration that can be down for
-  // reasons that have nothing to do with the rest of the demo. Switching
-  // mid-conversation is fine: each request carries its own choice.
+  // Presenter-facing override of which backend answers. Defaults to Pega —
+  // switching mid-conversation is fine, since each request carries its own
+  // choice; this is a live safety valve if the Pega agent is unreachable.
   const [provider, setProvider] = useState<"pega" | "onboarding-guide">(
-    "onboarding-guide",
+    "pega",
   );
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -93,7 +86,6 @@ export function AssistantChat({
             content,
           })),
           conversationId,
-          sessionId,
           provider,
         }),
       });

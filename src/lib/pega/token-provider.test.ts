@@ -12,6 +12,7 @@ const config: PegaConnectionConfig = {
   clientSecret: "client-secret",
   caseTypeId: "NorthStar-Onboarding",
   timeoutMs: 5000,
+  uploadTimeoutMs: 60_000,
   maxRetries: 2,
   tokenSkewSeconds: 60,
 };

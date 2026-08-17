@@ -1,9 +1,10 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OnboardingAssistantProvider } from "@/lib/assistant/onboarding-provider";
 import { PegaAssistantProvider } from "@/lib/assistant/pega-provider";
 import { AssistantUnavailableError } from "@/lib/assistant/provider";
+import { resetServerConfigCache } from "@/lib/config/env";
 import { listIndustryPacks } from "@/lib/industry/registry";
 
 /**
@@ -17,7 +18,7 @@ import { listIndustryPacks } from "@/lib/industry/registry";
 const assistant = new OnboardingAssistantProvider();
 
 async function ask(message: string, industryId: "banking" | "insurance" | "telecom" = "banking") {
-  return assistant.respond({ message, industryId, history: [], sessionId: "test-session" });
+  return assistant.respond({ message, industryId, history: [] });
 }
 
 describe("what the assistant knows", () => {
@@ -90,7 +91,6 @@ describe("what the assistant may not do", () => {
           message: question,
           industryId: pack.id,
           history: [],
-          sessionId: "test-session",
         });
 
         for (const suggestion of reply.suggestions ?? []) {
@@ -111,6 +111,13 @@ describe("what the assistant may not do", () => {
 });
 
 describe("Pega as the backend", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    resetServerConfigCache();
+  });
+
   it("refuses rather than quietly answering as something else", async () => {
     // Falling back here would let the demo claim Pega answered when it did
     // not, which is precisely what this comparison cannot afford.
@@ -119,7 +126,6 @@ describe("Pega as the backend", () => {
         message: "what documents do I need?",
         industryId: "banking",
         history: [],
-        sessionId: "test-session",
       }),
     ).rejects.toBeInstanceOf(AssistantUnavailableError);
   });
@@ -132,7 +138,6 @@ describe("Pega as the backend", () => {
         message: "hello",
         industryId: "banking",
         history: [],
-        sessionId: "test-session",
       });
     } catch (caught) {
       error = caught as AssistantUnavailableError;
@@ -140,5 +145,94 @@ describe("Pega as the backend", () => {
 
     expect(error?.message).toMatch(/PEGA_ASSISTANT_URL|not configured/i);
     expect(error?.customerMessage).not.toMatch(/PEGA_ASSISTANT_URL/);
+  });
+
+  it("sends A2A message/send with a bearer token when URL is an agent card", async () => {
+    const cardUrl =
+      "https://example.com/prweb/app/x/api/agent2agent/v1/ai-agents/AGENT/.well-known/agent-card.json";
+    const rpcUrl =
+      "https://example.com/prweb/app/x/api/agent2agent/v1/ai-agents/AGENT";
+
+    vi.stubEnv("ASSISTANT_PROVIDER", "pega");
+    vi.stubEnv("PEGA_ASSISTANT_URL", cardUrl);
+    vi.stubEnv("ORCHESTRATION_MODE", "pega");
+    vi.stubEnv("PEGA_BASE_URL", "https://example.com/prweb/api/application/v2");
+    vi.stubEnv(
+      "PEGA_TOKEN_URL",
+      "https://example.com/prweb/PRRestService/oauth2/v1/token",
+    );
+    vi.stubEnv("PEGA_CLIENT_ID", "client");
+    vi.stubEnv("PEGA_CLIENT_SECRET", "secret");
+    resetServerConfigCache();
+
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+
+        if (url.includes("oauth2") || url.includes("/token")) {
+          return new Response(
+            JSON.stringify({
+              access_token: "test-token",
+              token_type: "Bearer",
+              expires_in: 3600,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+
+        if (url.includes("agent-card.json")) {
+          return new Response(
+            JSON.stringify({
+              name: "Unified Customer Onboarding",
+              url: rpcUrl,
+              preferredTransport: "JSONRPC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+
+        if (url === rpcUrl && init?.method === "POST") {
+          const body = JSON.parse(String(init.body));
+          expect(body.method).toBe("message/send");
+          expect(body.params.message.parts[0].text).toContain("What do I need?");
+          expect(
+            (init.headers as Record<string, string>).Authorization,
+          ).toBe("Bearer test-token");
+
+          return new Response(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: body.id,
+              result: {
+                kind: "message",
+                role: "agent",
+                messageId: "agent-1",
+                contextId: "ctx-1",
+                parts: [
+                  { kind: "text", text: "Please upload a proof of address." },
+                ],
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+
+        return new Response(`unexpected ${url}`, { status: 404 });
+      },
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new PegaAssistantProvider();
+    const reply = await provider.respond({
+      message: "What do I need?",
+      industryId: "banking",
+      caseId: "ONB-1",
+      history: [],
+    });
+
+    expect(reply.message).toBe("Please upload a proof of address.");
+    expect(reply.source).toMatch(/pega-agent/);
+    expect(reply.conversationId).toBe("ctx-1");
   });
 });
