@@ -5,6 +5,7 @@ import {
   type AssistantRequest,
   AssistantUnavailableError,
 } from "@/lib/assistant/provider";
+import { getTokenProvider } from "@/lib/pega/token-provider";
 
 /**
  * Pega as the conversational backend.
@@ -40,9 +41,29 @@ export class PegaAssistantProvider implements AssistantProvider {
       );
     }
 
+    // Same client-credentials token the case-management client uses — this
+    // is one Pega application, not two, and the token endpoint doesn't care
+    // which rule is being called.
+    const accessToken = await getTokenProvider(pega).getAccessToken();
+
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        // The chat_onboarding REST rule (Request > Headers, confirmed in
+        // Dev Studio) maps these six values off the HTTP headers onto the
+        // clipboard, not off the JSON body — a request that only carries
+        // them in the body leaves .ChatMessage (and friends) untouched.
+        // CRLF stripped because this is free customer text landing
+        // directly in a header value.
+        caseid: request.caseId ?? "",
+        industrycode: request.industryId.toUpperCase(),
+        message: request.message.replace(/[\r\n]+/g, " "),
+        schemaversion: "1.0",
+        conversationid: request.conversationId ?? "",
+        sessionid: request.sessionId,
+      },
       body: JSON.stringify({
         // The same correlation vocabulary the tool contract uses, so a
         // conversation can be tied to the case it was about.
@@ -54,6 +75,12 @@ export class PegaAssistantProvider implements AssistantProvider {
         // than replaying history; this is what resumes it. Empty string on
         // the first turn, exactly as the agent's session API expects.
         conversationId: request.conversationId ?? "",
+        // Stable session anchor, present from the very first call — unlike
+        // conversationId, which the agent only issues after replying once.
+        // The agent needs a non-empty context identifier even before any
+        // case exists, and this is the only thing in the request that is
+        // both non-empty and unique to this browser session from turn one.
+        sessionId: request.sessionId,
         schemaVersion: "1.0",
       }),
     });

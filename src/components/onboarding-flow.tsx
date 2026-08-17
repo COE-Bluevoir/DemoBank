@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { ShieldCheck } from "lucide-react";
 
 import { AssistantPanel } from "@/components/assistant-panel";
@@ -29,6 +29,63 @@ import type {
   OnboardingCaseView,
 } from "@/lib/onboarding/types";
 import { formatDateTime } from "@/lib/onboarding/utils";
+
+// Country calling codes offered on the mobile field. India is first and
+// what the field falls back to when the stored value carries no known
+// prefix, so a fresh application starts with +91 already selected.
+const COUNTRY_CODES = [
+  { code: "+91", label: "India +91" },
+  { code: "+1", label: "US/Canada +1" },
+  { code: "+44", label: "UK +44" },
+  { code: "+971", label: "UAE +971" },
+  { code: "+65", label: "Singapore +65" },
+] as const;
+
+function splitPhone(value: string | undefined): { code: string; number: string } {
+  const trimmed = (value ?? "").trim();
+  const match = COUNTRY_CODES.find((entry) => trimmed.startsWith(entry.code));
+
+  return match
+    ? { code: match.code, number: trimmed.slice(match.code.length).trim() }
+    : { code: COUNTRY_CODES[0].code, number: trimmed };
+}
+
+// Fully derived from the combined `mobile` string rather than local state,
+// so it can never drift out of sync with a form.reset (e.g. loading an
+// existing applicant) or with react-hook-form's own value.
+function PhoneField({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  const { code, number } = splitPhone(value);
+
+  return (
+    <div className="flex gap-2">
+      <SelectInput
+        aria-label="Country code"
+        className="w-30 flex-none px-2"
+        value={code}
+        onChange={(event) => onChange(`${event.target.value} ${number}`.trim())}
+      >
+        {COUNTRY_CODES.map((entry) => (
+          <option key={entry.code} value={entry.code}>
+            {entry.code}
+          </option>
+        ))}
+      </SelectInput>
+      <TextInput
+        type="tel"
+        className="flex-1"
+        placeholder="90000 00000"
+        value={number}
+        onChange={(event) => onChange(`${code} ${event.target.value}`.trim())}
+      />
+    </div>
+  );
+}
 
 function ApplicantForm({
   initialValues,
@@ -74,7 +131,15 @@ function ApplicantForm({
                 <span className="font-medium text-[var(--color-ink)]">
                   {field.label}
                 </span>
-                {field.options ? (
+                {field.key === "mobile" ? (
+                  <Controller
+                    control={form.control}
+                    name={field.key}
+                    render={({ field: rhf }) => (
+                      <PhoneField value={rhf.value} onChange={rhf.onChange} />
+                    )}
+                  />
+                ) : field.options ? (
                   <SelectInput {...form.register(field.key)}>
                     <option value="">Select</option>
                     {field.options.map((option) => (

@@ -6,9 +6,12 @@ import type { AssistantProvider } from "@/lib/assistant/provider";
 /**
  * Which system answers the customer.
  *
- * Selected by configuration, exactly like the orchestration mode and the
- * storage driver. `ASSISTANT_PROVIDER=pega` routes the chat to Pega's
- * conversational channel; anything else answers from the industry pack.
+ * Selected by configuration by default, exactly like the orchestration mode
+ * and the storage driver — `ASSISTANT_PROVIDER=pega` routes the chat to
+ * Pega's conversational channel; anything else answers from the industry
+ * pack. A caller may override that default per request (the chat widget's
+ * presenter toggle does this), so a demo can switch backends live without a
+ * server restart.
  *
  * Deliberately not tied to `ORCHESTRATION_MODE`: which system runs the
  * workflow and which one answers questions are separate decisions, and
@@ -16,20 +19,32 @@ import type { AssistantProvider } from "@/lib/assistant/provider";
  * someone flipped the orchestration switch.
  */
 
-let provider: AssistantProvider | undefined;
+let defaultProvider: AssistantProvider | undefined;
+let pegaProvider: AssistantProvider | undefined;
+let onboardingGuideProvider: AssistantProvider | undefined;
 
-export function getAssistantProvider(): AssistantProvider {
-  if (!provider) {
-    provider =
+export function getAssistantProvider(
+  preferred?: "pega" | "onboarding-guide",
+): AssistantProvider {
+  if (preferred === "pega") {
+    return (pegaProvider ??= new PegaAssistantProvider());
+  }
+
+  if (preferred === "onboarding-guide") {
+    return (onboardingGuideProvider ??= new OnboardingAssistantProvider());
+  }
+
+  if (!defaultProvider) {
+    defaultProvider =
       getServerConfig().assistantProvider === "pega"
         ? new PegaAssistantProvider()
         : new OnboardingAssistantProvider();
   }
 
-  return provider;
+  return defaultProvider;
 }
 
 /** Test seam. */
 export function setAssistantProvider(next: AssistantProvider | undefined): void {
-  provider = next;
+  defaultProvider = next;
 }

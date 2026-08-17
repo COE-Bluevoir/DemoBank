@@ -41,6 +41,19 @@ export function AssistantChat({
   // on its first reply. Opaque to this component — only ever carried, never
   // inspected. Absent for providers that don't use one.
   const [conversationId, setConversationId] = useState<string | undefined>();
+  // Minted once, before the first message — unlike conversationId, a
+  // provider may need a stable, non-empty anchor from turn one, before it
+  // has replied even once. useState's initializer runs once per mount, so
+  // every message in this widget's lifetime carries the same value.
+  const [sessionId] = useState(() => crypto.randomUUID());
+  // Presenter-facing override of which backend answers. Defaults to the
+  // built-in guide — reliable and config-driven — since Pega's live
+  // conversational channel is a separate integration that can be down for
+  // reasons that have nothing to do with the rest of the demo. Switching
+  // mid-conversation is fine: each request carries its own choice.
+  const [provider, setProvider] = useState<"pega" | "onboarding-guide">(
+    "onboarding-guide",
+  );
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -80,6 +93,8 @@ export function AssistantChat({
             content,
           })),
           conversationId,
+          sessionId,
+          provider,
         }),
       });
 
@@ -143,6 +158,38 @@ export function AssistantChat({
         >
           <X className="h-4 w-4" />
         </button>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-white px-4 py-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-muted)]">
+          Assistant backend
+        </span>
+        <div className="flex rounded-full bg-[var(--color-surface-soft)] p-0.5 text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => setProvider("onboarding-guide")}
+            className={[
+              "rounded-full px-3 py-1 transition",
+              provider === "onboarding-guide"
+                ? "bg-[var(--color-navy)] text-white"
+                : "text-[var(--color-ink-muted)]",
+            ].join(" ")}
+          >
+            Built-in
+          </button>
+          <button
+            type="button"
+            onClick={() => setProvider("pega")}
+            className={[
+              "rounded-full px-3 py-1 transition",
+              provider === "pega"
+                ? "bg-[var(--color-navy)] text-white"
+                : "text-[var(--color-ink-muted)]",
+            ].join(" ")}
+          >
+            Pega agent
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto bg-[var(--color-surface-soft)] p-4">

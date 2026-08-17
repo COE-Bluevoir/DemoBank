@@ -63,7 +63,7 @@ export default function HomePage() {
 
               <dl className="grid max-w-xl gap-6 border-t border-white/12 pt-6 sm:grid-cols-3">
                 {[
-                  { value: "2.4m", label: "customers" },
+                  { value: "2.4M", label: "customers" },
                   { value: "480", label: "branches" },
                   { value: "24/7", label: "support" },
                 ].map((stat) => (

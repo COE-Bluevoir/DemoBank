@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { requirePegaConfig } from "@/lib/config/env";
 import { getIndustryPack } from "@/lib/industry/registry";
+import type { IndustryId } from "@/lib/industry/types";
 import { DEMO_ORGANISATION } from "@/lib/onboarding/constants";
 import { formatFullName } from "@/lib/onboarding/applicant-name";
 import { formatAddress } from "@/lib/onboarding/party";
@@ -66,6 +67,25 @@ function organisationContent(): Record<string, string> {
     RegisteredAddress: formatAddress(DEMO_ORGANISATION.registeredAddress),
     AuthorizedRepresentative: DEMO_ORGANISATION.authorisedRepresentative,
   };
+}
+
+/**
+ * The Pega attachment category a document requirement must be recorded
+ * under, so `pxIsAttachmentOfCategoryInCase` (run by the case type's own
+ * attachment validation) finds it. `undefined` when the pack defines no
+ * category — the generic "File" category is used instead.
+ */
+function pegaAttachmentCategoryFor(
+  industryId: IndustryId,
+  documentCode: string | undefined,
+): string | undefined {
+  if (!documentCode) {
+    return undefined;
+  }
+
+  return getIndustryPack(industryId).documentProfile.find(
+    (item) => item.code === documentCode,
+  )?.pegaAttachmentCategory;
 }
 
 /**
@@ -669,15 +689,28 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       });
     }
 
-    const attachmentId = await this.uploadAttachment(caseId, {
-      fileName: document.fileName,
-      contentType: document.fileType,
-      content: stored.content,
-    });
+    const uploadState = await loadState(caseId);
+    const category = pegaAttachmentCategoryFor(
+      uploadState.industryId,
+      document.documentCode,
+    );
+
+    // Categorised so Pega's own attachment-store validation
+    // (`pxIsAttachmentOfCategoryInCase`) recognises it — citing the upload
+    // inside a flow action's content later is not enough by itself; the
+    // category must be written via this call.
+    const attachmentId = await this.attachToCase(
+      caseId,
+      {
+        fileName: document.fileName,
+        contentType: document.fileType,
+        content: stored.content,
+      },
+      category,
+    );
 
     // The customer has now genuinely provided a document, which opens the
     // upload gate for the assignment waiting on one.
-    const uploadState = await loadState(caseId);
     uploadState.collected.documentsProvided = true;
     uploadState.collected.awaitingDocumentUpload = false;
     // Pega's case content does not carry the file until later in its own
@@ -737,11 +770,13 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         const content = await sampleDocumentBytes(requirement);
         const contentType = sampleDocumentContentType(requirement);
         const fileName = requirement.sampleFile;
-        const attachmentId = await this.uploadAttachment(caseId, {
-          fileName,
-          contentType,
-          content,
-        });
+        // Categorised the same way a real customer upload is — the sample
+        // documents must satisfy the same attachment-store validation.
+        const attachmentId = await this.attachToCase(
+          caseId,
+          { fileName, contentType, content },
+          requirement.pegaAttachmentCategory,
+        );
 
         return { requirement, attachmentId, fileName, contentType, fileSize: content.byteLength };
       }),
@@ -774,39 +809,20 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   }
 
   /**
-   * Upload a file to Pega's attachment store.
+   * Upload a file to Pega and record it in the case's own attachment store
+   * under the given category.
    *
-   * Returns the upload's ID, which the flow action then cites to attach it to
-   * the case. Uploading does not by itself associate the file with anything.
-   */
-  private async uploadAttachment(
-    caseId: string,
-    file: { fileName: string; contentType: string; content: Uint8Array },
-  ): Promise<string> {
-    const state = await loadState(caseId);
-
-    const uploaded = await this.client.uploadFile({
-      path: "/attachments/upload",
-      fileName: file.fileName,
-      contentType: file.contentType,
-      content: file.content,
-      correlationId: state.correlationId,
-      schema: dxAttachmentUploadSchema,
-    });
-
-    return uploaded.ID;
-  }
-
-  /**
-   * Upload a file to Pega and link it directly to the case.
-   *
-   * Used when no flow action is waiting to receive the file; the document
-   * steps attach through the action instead, so the case records which step
-   * the evidence answered.
+   * The category is not cosmetic: case-type attachment validation (e.g.
+   * `pxIsAttachmentOfCategoryInCase`) queries this store directly, keyed by
+   * category. Citing the same upload inside a flow action's own content
+   * later (`Document[n].DocumentFile.pxAttachmentKey`) does not write this
+   * record — only this call does — so every document upload goes through
+   * here, whether or not a flow action is currently open to receive it.
    */
   private async attachToCase(
     caseId: string,
     file: { fileName: string; contentType: string; content: Uint8Array },
+    category = "File",
   ): Promise<string> {
     const state = await loadState(caseId);
 
@@ -828,7 +844,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         attachments: [
           {
             type: "File",
-            category: "File",
+            category,
             ID: uploaded.ID,
             name: file.fileName,
           },

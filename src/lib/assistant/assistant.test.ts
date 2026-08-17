@@ -17,7 +17,7 @@ import { listIndustryPacks } from "@/lib/industry/registry";
 const assistant = new OnboardingAssistantProvider();
 
 async function ask(message: string, industryId: "banking" | "insurance" | "telecom" = "banking") {
-  return assistant.respond({ message, industryId, history: [] });
+  return assistant.respond({ message, industryId, history: [], sessionId: "test-session" });
 }
 
 describe("what the assistant knows", () => {
@@ -90,6 +90,7 @@ describe("what the assistant may not do", () => {
           message: question,
           industryId: pack.id,
           history: [],
+          sessionId: "test-session",
         });
 
         for (const suggestion of reply.suggestions ?? []) {
@@ -118,6 +119,7 @@ describe("Pega as the backend", () => {
         message: "what documents do I need?",
         industryId: "banking",
         history: [],
+        sessionId: "test-session",
       }),
     ).rejects.toBeInstanceOf(AssistantUnavailableError);
   });
@@ -130,6 +132,7 @@ describe("Pega as the backend", () => {
         message: "hello",
         industryId: "banking",
         history: [],
+        sessionId: "test-session",
       });
     } catch (caught) {
       error = caught as AssistantUnavailableError;

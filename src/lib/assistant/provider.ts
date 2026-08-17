@@ -34,6 +34,18 @@ export interface AssistantRequest {
    * don't may ignore it. Absent on the first turn.
    */
   conversationId?: string;
+  /**
+   * Stable identifier for this chat session, minted by the caller before the
+   * first message is ever sent.
+   *
+   * Distinct from `conversationId`: this is known immediately (the browser
+   * generates it, no round trip needed) and never changes for the life of
+   * the widget, whereas `conversationId` is issued by the provider and is
+   * absent until the first reply. A provider that needs a non-empty, unique
+   * anchor before any case or conversation exists — Pega's agent does, to
+   * ground its own session context — uses this instead.
+   */
+  sessionId: string;
 }
 
 /**

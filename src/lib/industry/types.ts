@@ -49,6 +49,19 @@ export interface DocumentRequirement {
    * truth in `EXPECTED_EXTRACTIONS` keyed by this requirement's `code`.
    */
   sampleFile: string;
+  /**
+   * The attachment category Pega's case-level attachment store must record
+   * this evidence under, when the live Pega adapter is in use.
+   *
+   * Verified against the `ValidateDocumentAttachments` rule source: each
+   * category is a freeform string literal the validate checks with
+   * `pxIsAttachmentOfCategoryInCase`, matched exactly (case-sensitive) — not
+   * a class key or Field Value. Citing an attachment inside a flow action's
+   * own content does not satisfy this; only `POST /cases/{id}/attachments`
+   * with this exact string as `category` writes the record the validate
+   * reads. Absent for packs not verified against a live Pega case type.
+   */
+  pegaAttachmentCategory?: string;
 }
 
 /**
