@@ -64,6 +64,10 @@ export const scenarioSchema = z.object({
   scenarioId: z.enum(["ADDRESS_PEP_REVIEW", "HAPPY_PATH", "SERVICE_TIMEOUT"]),
 });
 
+export const pegaDemoModeSchema = z.object({
+  enabled: z.boolean(),
+});
+
 export const passcodeSchema = z.object({
   passcode: z.string().min(1),
 });

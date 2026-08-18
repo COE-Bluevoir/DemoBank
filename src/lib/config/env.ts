@@ -66,6 +66,11 @@ const envSchema = z.object({
     .default("ADDRESS_PEP_REVIEW"),
   DEMO_CONTROL_ENABLED: booleanFromString(true),
   DEMO_CONTROL_PASSCODE: z.string().min(1).optional().default("northstar-26"),
+  // Sent to Pega on case creation as `DemoModeEnabled`. Pega's own flows read
+  // that property to decide whether to call live GenAI/screening agents or
+  // route through the stub bypass — this is only ever a starting value; the
+  // presenter panel can flip it per session without a redeploy.
+  PEGA_DEMO_MODE_DEFAULT: booleanFromString(false),
 
   PEGA_BASE_URL: z.url().optional(),
   PEGA_TOKEN_URL: z.url().optional(),
@@ -159,6 +164,7 @@ export interface ServerConfig {
   defaultScenarioId: RawServerEnv["DEMO_SCENARIO"];
   demoControlEnabled: boolean;
   demoControlPasscode: string;
+  pegaDemoModeDefault: boolean;
   assistantProvider: RawServerEnv["ASSISTANT_PROVIDER"];
   pegaAssistantUrl?: string;
   serviceApiKey?: string;
@@ -267,6 +273,7 @@ function loadConfig(source: EnvSource): ServerConfig {
     defaultScenarioId: env.DEMO_SCENARIO,
     demoControlEnabled: env.DEMO_CONTROL_ENABLED,
     demoControlPasscode: env.DEMO_CONTROL_PASSCODE,
+    pegaDemoModeDefault: env.PEGA_DEMO_MODE_DEFAULT,
     assistantProvider: env.ASSISTANT_PROVIDER,
     pegaAssistantUrl: env.PEGA_ASSISTANT_URL,
     serviceApiKey: env.SERVICE_API_KEY,

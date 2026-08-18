@@ -14,6 +14,7 @@ function initialSnapshot(): DemoSnapshot {
       orchestrationMode: "mock-pega",
       scenarioId: "ADDRESS_PEP_REVIEW",
       demoControlEnabled: true,
+      pegaDemoModeEnabled: false,
     },
     cases: [],
   };

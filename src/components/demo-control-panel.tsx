@@ -35,6 +35,9 @@ export function DemoControlPanel({
   const [events, setEvents] = useState(initialEvents);
   const [mode, setMode] = useState(settings.orchestrationMode);
   const [scenario, setScenario] = useState(settings.scenarioId);
+  const [pegaDemoMode, setPegaDemoMode] = useState(
+    settings.pegaDemoModeEnabled,
+  );
   const [copyState, setCopyState] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -92,6 +95,15 @@ export function DemoControlPanel({
     });
   }
 
+  async function updatePegaDemoModeSelection(value: boolean) {
+    setPegaDemoMode(value);
+    await fetch("/api/demo/pega-demo-mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: value }),
+    });
+  }
+
   return (
     <div className="space-y-6">
       <Card className="space-y-6">
@@ -134,6 +146,24 @@ export function DemoControlPanel({
             </SelectInput>
           </label>
         </div>
+        <label className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4"
+            checked={pegaDemoMode}
+            onChange={(event) => updatePegaDemoModeSelection(event.target.checked)}
+          />
+          <span>
+            <span className="block font-medium text-[var(--color-ink)]">
+              Pega demo bypass
+            </span>
+            <span className="block text-[var(--color-ink-subtle)]">
+              New cases send DemoModeEnabled to Pega, which routes flows
+              through a stub happy path instead of live GenAI/screening
+              agents. Off runs the real agent calls.
+            </span>
+          </span>
+        </label>
         <div className="flex flex-wrap gap-3">
           <Button type="button" disabled={!caseData || isPending} onClick={() => callCaseControl("reset")}>
             Reset demo data

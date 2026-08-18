@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { ConfigurationError, getServerConfig } from "@/lib/config/env";
 import { logServerError } from "@/lib/observability/logger";
 import { NonPegaCaseNotFoundError } from "@/lib/orchestration/non-pega-adapter";
+import { setPegaDemoModeEnabled } from "@/lib/onboarding/pega-demo-mode";
 import { PegaIntegrationError } from "@/lib/pega/errors";
 import {
   BRAND,
@@ -109,6 +110,7 @@ function defaultSettings(): DemoSettings {
     orchestrationMode: config.orchestrationMode,
     scenarioId: config.defaultScenarioId,
     demoControlEnabled: config.demoControlEnabled,
+    pegaDemoModeEnabled: config.pegaDemoModeDefault,
   };
 }
 
@@ -941,6 +943,14 @@ export function updateMode(mode: OrchestrationMode) {
 export function updateScenario(scenarioId: ScenarioId) {
   return withStore((snapshot) => {
     snapshot.settings.scenarioId = scenarioId;
+    return snapshot.settings;
+  });
+}
+
+export function updatePegaDemoMode(enabled: boolean) {
+  setPegaDemoModeEnabled(enabled);
+  return withStore((snapshot) => {
+    snapshot.settings.pegaDemoModeEnabled = enabled;
     return snapshot.settings;
   });
 }

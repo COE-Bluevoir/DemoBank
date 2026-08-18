@@ -241,6 +241,13 @@ export interface DemoSettings {
   orchestrationMode: OrchestrationMode;
   scenarioId: ScenarioId;
   demoControlEnabled: boolean;
+  /**
+   * Sent to Pega as `DemoModeEnabled` on case creation. When true, Pega's own
+   * flows bypass live GenAI/screening agent calls and route through a stub
+   * happy path instead — the seamless flow for an executive audience, while
+   * the real agent wiring is still being finished.
+   */
+  pegaDemoModeEnabled: boolean;
   currentCaseId?: string;
 }
 
