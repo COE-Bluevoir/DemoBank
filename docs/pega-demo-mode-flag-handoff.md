@@ -64,6 +64,43 @@ Found live this week, still outstanding:
 - **`Utility3` PropertyReference error**: "declare page parameters not supported by PropertyReference" in Perform Screening — a Declare Page/PropertyReference misconfiguration, separate from the two issues above.
 - **DocumentAgent tool description**: still describes individual KYC documents (Passport/DL/bank statement) instead of the actual business documents this journey collects (Certificate of Incorporation, Authorised Signatory ID, Board Resolution, Tax Registration Certificate, Business Address Proof). Corrected text was handed over earlier; not confirmed applied.
 
-## 6. One platform quirk worth knowing regardless
+## 6. No dedicated `AgentResponse` property exists yet
+
+Asked to store the full extraction/screening result as JSON — the way a real
+agent would report it, not just what `Document[]`/`CheckResult[]` can hold —
+the same way the request that started this whole document did. Checked live
+2026-08-19: **`AgentResponse` is not a property on this case type at all** —
+absent from `pyUpdateCaseDetails`'s known fields and from case content. The
+app is currently stashing this JSON in `pyNote` instead (a large Text-Area
+field that round-trips a ~3KB blob intact, unlike the 256-char-limited Text
+properties that truncated it earlier this session).
+
+**This works, but only for the active lifecycle of the case.** Confirmed
+live: once the case reaches `Resolved-Completed`, `pyUpdateCaseDetails`
+stops returning `Document`, `CheckResult`, `Execution` and `pyNote` at all —
+not just empty, genuinely absent from the response, while scalar fields
+(`Address`, `ProductIntent`, `CustomerOnboardingName`) remain intact. That
+pattern — page-list and Text-Area properties gone, single-value properties
+untouched — reads like a resolution-time cleanup data transform specific to
+this case type, not a DX API limitation; there's presumably a step in the
+resolution flow that clears working/scratch fields, and `pyNote` and the
+three page lists are getting caught in it.
+
+Not a blocker for the demo — the customer-facing UI has never read this data
+from live Pega (it renders from the app's own fixture data, by design, given
+the live agents' reliability history), and the JSON is genuinely present
+and correct in Pega while the case is active, which is when a presenter
+would open it anyway. But if the intent is for a reviewer to open a
+*completed* case later and see the full agent output, two options:
+
+1. Add a real `AgentResponse` property (Text-Paragraph, to hold a few KB)
+   to the data model and `pyUpdateCaseDetails`'s view, and exclude it from
+   whatever resolution-time cleanup is clearing `pyNote`.
+2. Identify which resolution-time step is clearing `Document`/`CheckResult`/
+   `Execution`/`pyNote` and either scope it to exclude scripted-mode cases,
+   or confirm it's intentional and this data was never meant to outlive
+   resolution.
+
+## 7. One platform quirk worth knowing regardless
 
 `pyUpdateCaseDetails`'s `Applicant`, `Address`, and `Consent` fields are single-reference Combobox controls bound to a savable Data object by `pyGUID` — **not** embedded pages like `Document`/`CheckResult`/`Execution`. Confirmed live: this view accepts *only* the bare display-name property for each (`ApplicantName`, `AddressName`, `ConsentName`) — including any other sub-property (`FirstName`, `StreetAddress`, `ConsentType`, anything) causes the **entire PATCH to reject** with a generic `Error_Invalid_Inputs_content`, no field-level detail. This silently broke an existing app-side function (`syncCustomerOnboardingName`) that's been sending the fuller shape — just fixed on the app side by trimming to the display-name-only form, but flagging it in case it explains other integration oddities you've seen, or in case it's worth exposing a fuller `Applicant`/`Address` edit surface on that view.

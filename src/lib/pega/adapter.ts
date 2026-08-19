@@ -11,6 +11,7 @@ import { getDocumentStorage } from "@/lib/storage/document-storage";
 import { getPegaDemoModeEnabled } from "@/lib/onboarding/pega-demo-mode";
 import { mirrorScriptedStep } from "@/lib/pega/scripted-drive";
 import {
+  scriptedAgentResponseJson,
   scriptedCheckRows,
   scriptedDocumentRows,
   scriptedExecutionRows,
@@ -1006,6 +1007,10 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
           ...pegaUpdateCaseDetailsContent(state),
           Document: scriptedDocumentRows(),
           Execution: scriptedExecutionRows("extraction"),
+          // The full extraction result as the agent itself would report
+          // it — every field, every confidence score, the planted
+          // discrepancy — not just what Document[] can hold.
+          pyNote: scriptedAgentResponseJson({ addressCorrected: false }),
         },
         // Forces the real case past whatever the live extraction automation
         // left it at — including a problem-flow assignment — since scripted
@@ -1059,6 +1064,12 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
           Document: scriptedDocumentRows({ addressCorrected: true }),
           CheckResult: scriptedCheckRows(pack.checkProfile),
           Execution: scriptedExecutionRows("screening"),
+          // Supersedes the extraction-stage pyNote with the complete
+          // record — corrected address, every screening outcome included.
+          pyNote: scriptedAgentResponseJson({
+            addressCorrected: true,
+            checkProfile: pack.checkProfile,
+          }),
         },
         stage: "PRIM6",
       },

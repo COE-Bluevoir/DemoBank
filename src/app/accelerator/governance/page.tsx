@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { GovernanceConsole } from "@/components/governance-console";
+import { HallucinationDemo } from "@/components/hallucination-demo";
 
 export const metadata: Metadata = {
   title: "AI governance console",
@@ -32,7 +33,8 @@ export default function GovernancePage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-10 lg:px-8">
+      <main className="mx-auto max-w-6xl space-y-8 px-6 py-10 lg:px-8">
+        <HallucinationDemo />
         <GovernanceConsole />
       </main>
     </div>
