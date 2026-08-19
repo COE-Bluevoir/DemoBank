@@ -21,7 +21,7 @@ export function AcceleratorConsole({ packs }: { packs: IndustryPack[] }) {
         {packs.map((pack) => (
           <li key={pack.id}>
             <Link
-              href={`/${pack.id}`}
+              href={pack.id === "banking" ? "/" : `/${pack.id}`}
               className="flex h-full flex-col gap-4 rounded-[28px] border border-[var(--color-border)] bg-white p-6 transition hover:border-[var(--color-ink)]"
             >
               <span

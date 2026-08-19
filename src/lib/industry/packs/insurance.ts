@@ -85,6 +85,33 @@ export const insurancePack: IndustryPack = {
     accent: "#0F7B6C",
   },
 
+  // Three commercial property products, all opening through the identical
+  // document/screening journey below — only the name, positioning and
+  // `ProductIntent` sent to Pega change with which one a customer picks.
+  products: [
+    {
+      code: "HOUSEHOLD_PROTECT",
+      name: "Household Protect Policy",
+      tagline: "Recommended for premises and property cover",
+      description:
+        "Fire, weather and theft cover for a single commercial premises, with a straightforward claims process.",
+    },
+    {
+      code: "COMMERCIAL_PROPERTY_SHIELD",
+      name: "Commercial Property Shield",
+      tagline: "Built for higher-value business premises",
+      description:
+        "Broader cover for buildings, fixtures and stock, with loss-of-rent protection while a claim is settled.",
+    },
+    {
+      code: "BUSINESS_LIABILITY_COVER",
+      name: "Business Liability Cover",
+      tagline: "For businesses managing third-party risk",
+      description:
+        "Public and product liability cover for a business whose operations bring it into contact with customers or the public.",
+    },
+  ],
+
   terminology: {
     customerNoun: "policyholder",
     productNoun: "policy",

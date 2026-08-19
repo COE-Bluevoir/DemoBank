@@ -1,16 +1,23 @@
 import Link from "next/link";
 
 import { getIndustryPack, listProductOptions } from "@/lib/industry/registry";
+import type { IndustryId } from "@/lib/industry/types";
 import { Badge, Button, Card } from "@/components/ui";
 
 /**
- * Every business banking product NorthStar offers, not just the reference
- * one — a single hardcoded card read as a single-product site even though
- * the same journey already opens any of them; only `ProductIntent` and the
- * on-page copy change with which one a customer picks.
+ * Every product this industry offers, not just the reference one — a single
+ * hardcoded card read as a single-product site even though the same journey
+ * already opens any of them; only `ProductIntent` and the on-page copy
+ * change with which one a customer picks.
  */
-export function ProductCard() {
-  const pack = getIndustryPack("banking");
+export function ProductCard({
+  industryId = "banking",
+  ctaLabel = "Open an account",
+}: {
+  industryId?: IndustryId;
+  ctaLabel?: string;
+}) {
+  const pack = getIndustryPack(industryId);
   const products = listProductOptions(pack);
 
   return (
@@ -30,11 +37,11 @@ export function ProductCard() {
           </div>
           <div className="flex flex-1 flex-wrap items-end gap-3">
             <Link
-              href={`/onboarding/start?industry=banking&product=${encodeURIComponent(product.code)}`}
+              href={`/onboarding/start?industry=${industryId}&product=${encodeURIComponent(product.code)}`}
             >
-              <Button>Open an account</Button>
+              <Button>{ctaLabel}</Button>
             </Link>
-            {product.code === "EVERYDAY_PLUS" ? (
+            {industryId === "banking" && product.code === "EVERYDAY_PLUS" ? (
               <Link href="/accounts/everyday-plus">
                 <Button variant="secondary">View product details</Button>
               </Link>

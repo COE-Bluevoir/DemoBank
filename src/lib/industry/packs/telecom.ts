@@ -84,6 +84,33 @@ export const telecomPack: IndustryPack = {
     accent: "#B4531F",
   },
 
+  // Three connectivity tiers, all opening through the identical
+  // document/screening journey below — only the name, positioning and
+  // `ProductIntent` sent to Pega change with which one a customer picks.
+  products: [
+    {
+      code: "BUSINESS_FIBRE_500",
+      name: "Business Fibre 500",
+      tagline: "Recommended for growing business sites",
+      description:
+        "500 Mbps dedicated connectivity with a guaranteed uptime SLA, sized for a single active business site.",
+    },
+    {
+      code: "BUSINESS_FIBRE_1000",
+      name: "Business Fibre 1000",
+      tagline: "Built for high-bandwidth, multi-site operations",
+      description:
+        "1 Gbps dedicated connectivity with priority provisioning, for operations running multiple connected sites.",
+    },
+    {
+      code: "BUSINESS_FIBRE_100",
+      name: "Business Fibre 100",
+      tagline: "For a single site getting started",
+      description:
+        "100 Mbps dedicated connectivity at the lowest cost of entry, with the same reliability as the higher tiers.",
+    },
+  ],
+
   terminology: {
     customerNoun: "subscriber",
     productNoun: "service",

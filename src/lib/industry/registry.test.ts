@@ -11,6 +11,7 @@ import {
   resolveProductName,
 } from "@/lib/industry/registry";
 import { applicantSchema } from "@/lib/onboarding/schemas";
+import { bankingPack } from "@/lib/industry/packs/banking";
 
 describe("industry registry", () => {
   it("exposes the three configured industries", () => {
@@ -62,8 +63,11 @@ describe("product options", () => {
     );
   });
 
-  it("falls back to the pack's single default for an industry with only one product", () => {
-    const pack = getIndustryPack("insurance");
+  it("falls back to a synthesized single default for a pack with no products declared", () => {
+    // All three configured industries now declare a `products` array, so
+    // this exercises the fallback in isolation rather than depending on one
+    // of them staying single-product indefinitely.
+    const pack = { ...bankingPack, products: undefined };
     const options = listProductOptions(pack);
 
     expect(options).toEqual([
