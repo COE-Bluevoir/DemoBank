@@ -12,6 +12,14 @@ frontend:
         # not to the SSR compute runtime. Writing them to .env.production is
         # what carries them through to the running server.
         #
+        # This list must be kept in sync with every variable name in
+        # src/lib/config/env.ts's envSchema by hand — nothing enforces it
+        # automatically. A variable added there and set correctly in the
+        # Amplify console still silently never reaches the running server
+        # until its name is added here too (confirmed live 2026-08-19: three
+        # new OAuth variables were set in the console, the build succeeded,
+        # and the endpoint still failed auth until this list caught up).
+        #
         # AWS_REGION is deliberately excluded: it is reserved and supplied by
         # the Lambda runtime.
         - |
@@ -19,7 +27,10 @@ frontend:
                      STORAGE_DRIVER DYNAMODB_TABLE_NAME S3_DOCUMENT_BUCKET DOCUMENT_STORAGE_DIR \
                      AGENT_PROVIDER BEDROCK_REGION BEDROCK_MODEL_ID BEDROCK_REASONING_MODEL_ID \
                      PEGA_BASE_URL PEGA_TOKEN_URL PEGA_CLIENT_ID PEGA_CLIENT_SECRET \
-                     PEGA_CASE_TYPE_ID PEGA_TIMEOUT_MS PEGA_MAX_RETRIES SERVICE_API_KEY; do
+                     PEGA_CASE_TYPE_ID PEGA_TIMEOUT_MS PEGA_UPLOAD_TIMEOUT_MS PEGA_MAX_RETRIES \
+                     PEGA_TOKEN_SKEW_SECONDS PEGA_DEMO_MODE_DEFAULT SERVICE_API_KEY \
+                     MCP_OAUTH_CLIENT_ID MCP_OAUTH_CLIENT_SECRET MCP_OAUTH_SIGNING_KEY \
+                     ASSISTANT_PROVIDER PEGA_ASSISTANT_URL OPENAI_API_KEY OPENAI_MODEL; do
             if [ -n "${!key}" ]; then
               printf '%s=%s\n' "$key" "${!key}" >> .env.production
             fi
