@@ -1,5 +1,44 @@
 # Handoff to Pega team — a small, real Pega-backed example for the governance demo
 
+## Status: built and confirmed live — 2026-08-19
+
+Thank you — `D_ProductCatalog` exists and works. Confirmed live:
+
+```
+POST {PEGA_BASE_URL}/data_views/D_ProductCatalog
+Authorization: Bearer <token from PEGA_TOKEN_URL, same OAuth2 client-credentials as everything else>
+Content-Type: application/json
+Body: {}
+```
+
+Returns 200 with:
+
+```json
+{
+  "fetchDateTime": "2026-08-19T10:00:45.446Z",
+  "pxObjClass": "Pega-API-DataExploration-Data",
+  "resultCount": 3,
+  "data": [
+    {
+      "pxObjClass": "ODHMNT-AgenticC-Data-Product",
+      "ProductName": "Everyday Plus Account",
+      "ProductCode": "EVERYDAY_PLUS",
+      "RequiredDocuments": "Certificate of incorporation; Authorised signatory identity; Board resolution; Tax registration certificate; Business address proof"
+    }
+    // ...BUSINESS_GROWTH, MERCHANT_COLLECTIONS, same shape
+  ]
+}
+```
+
+Two notes for anyone touching this Data Page later:
+
+- **`GET` doesn't work** — it 422s with `Error_Request_Validation_Pagelist_Type_Dataview` ("This API does not support Pagelist type Data View"). `POST` with an empty JSON body (`{}`) is what actually works — worth knowing since `GET` is the more obvious first guess.
+- **No `InterestRate` field is present at all** — not returned as blank or null, genuinely absent from the schema. That turned out to be the better outcome for the demo (see below), so left as-is rather than asked to be added.
+
+The app now reads this live on every request — `src/lib/pega/product-catalog.ts` — with no fallback to local data if the call fails, so the demo either shows a genuine Pega answer or fails outright. Original ask preserved below for context.
+
+---
+
 ## Why
 
 The app has a small marketing demo (`/accelerator/governance`) that asks the same

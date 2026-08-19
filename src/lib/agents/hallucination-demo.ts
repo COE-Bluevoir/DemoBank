@@ -1,6 +1,5 @@
 import { getServerConfig } from "@/lib/config/env";
-import { OnboardingAssistantProvider } from "@/lib/assistant/onboarding-provider";
-import type { IndustryId } from "@/lib/industry/types";
+import { fetchProductCatalog } from "@/lib/pega/product-catalog";
 import {
   HALLUCINATION_QUESTIONS,
   type HallucinationDemoResult,
@@ -20,6 +19,13 @@ import {
  * rate for a product that has none on file. Deliberately not free text — a
  * live demo needs a failure that reproduces the same way every time, not
  * one that depends on today's sampling.
+ *
+ * The grounded side reads Pega's `D_ProductCatalog` Data Page live, via
+ * fetchProductCatalog() — see docs/pega-hallucination-demo-data-page-handoff.md
+ * for why. No silent fallback to local data on failure: if the live read
+ * fails, the whole comparison fails (the API route surfaces a 503) rather
+ * than quietly substituting local config while still labelling the answer
+ * as Pega's.
  *
  * Server-only: imports getServerConfig, which throws if pulled into a
  * client bundle. The client component imports question data from
@@ -94,11 +100,53 @@ async function askUngrounded(question: string): Promise<{ text: string; model: s
   return { text: stripMarkdown(text), model: raw.model ?? config.openaiModel };
 }
 
-let deterministicProvider: OnboardingAssistantProvider | undefined;
+const PEGA_PRODUCT_CATALOG_SOURCE = "Pega Data Page D_ProductCatalog (live)";
+
+/**
+ * Both curated questions are about the same reference product, so both
+ * answer from the one row Pega actually has for it. Documents: reads the
+ * live `RequiredDocuments` list. Interest rate: the row has no such field
+ * at all — not blank, absent — so the honest answer is that Pega's data has
+ * nothing to report, which is the more convincing fact precisely because
+ * it isn't flattering.
+ */
+async function answerFromPegaCatalog(
+  questionId: string,
+): Promise<{ text: string; source: string; answered: boolean }> {
+  const catalog = await fetchProductCatalog();
+  const product = catalog.find((entry) => entry.productCode === "EVERYDAY_PLUS");
+
+  if (!product) {
+    throw new Error(
+      "Pega's product catalog did not return an EVERYDAY_PLUS entry.",
+    );
+  }
+
+  if (questionId === "documents") {
+    const list = product.requiredDocuments
+      .map((document) => `• ${document}`)
+      .join("\n");
+
+    return {
+      text: `For the ${product.productName} you will need:\n${list}`,
+      source: PEGA_PRODUCT_CATALOG_SOURCE,
+      answered: true,
+    };
+  }
+
+  if (questionId === "interest-rate") {
+    return {
+      text: `Pega's product data for the ${product.productName} has no interest-rate field — there is nothing on file to report.`,
+      source: PEGA_PRODUCT_CATALOG_SOURCE,
+      answered: false,
+    };
+  }
+
+  throw new Error(`No Pega-backed answer defined for question "${questionId}".`);
+}
 
 export async function runHallucinationDemo(
   questionId: string,
-  industryId: IndustryId,
 ): Promise<HallucinationDemoResult> {
   const entry = HALLUCINATION_QUESTIONS.find((item) => item.id === questionId);
 
@@ -106,15 +154,9 @@ export async function runHallucinationDemo(
     throw new Error(`Unknown demo question "${questionId}".`);
   }
 
-  deterministicProvider ??= new OnboardingAssistantProvider();
-
   const [ungrounded, governed] = await Promise.all([
     askUngrounded(entry.question),
-    deterministicProvider.respond({
-      message: entry.question,
-      industryId,
-      history: [],
-    }),
+    answerFromPegaCatalog(entry.id),
   ]);
 
   return {
@@ -122,10 +164,6 @@ export async function runHallucinationDemo(
     correction: entry.correction,
     groundedOn: entry.groundedOn,
     ungrounded: { text: ungrounded.text, model: ungrounded.model, grounded: false },
-    governed: {
-      text: governed.message,
-      source: governed.source,
-      answered: !governed.source.endsWith(":out-of-scope"),
-    },
+    governed,
   };
 }

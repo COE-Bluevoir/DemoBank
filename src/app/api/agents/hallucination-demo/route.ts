@@ -16,7 +16,6 @@ const requestSchema = z.object({
   questionId: z.enum(
     HALLUCINATION_QUESTIONS.map((item) => item.id) as [string, ...string[]],
   ),
-  industryId: z.enum(["banking", "insurance", "telecom"]).default("banking"),
 });
 
 export async function POST(request: Request) {
@@ -41,10 +40,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await runHallucinationDemo(
-      parsed.data.questionId,
-      parsed.data.industryId,
-    );
+    const result = await runHallucinationDemo(parsed.data.questionId);
 
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

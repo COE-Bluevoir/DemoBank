@@ -4,7 +4,6 @@ import { useState } from "react";
 import { AlertTriangle, ArrowDown, ShieldCheck, ShieldOff } from "lucide-react";
 
 import { HALLUCINATION_QUESTIONS } from "@/lib/agents/hallucination-questions";
-import type { IndustryId } from "@/lib/industry/types";
 import { Badge, Button, Card, SectionTitle } from "@/components/ui";
 
 interface Result {
@@ -16,28 +15,22 @@ interface Result {
 }
 
 /**
- * Hallucinate, then watch grounded, deterministic execution catch it — live.
+ * Hallucinate, then watch a live Pega read catch it.
  *
  * Both questions reproduce a real failure caught in this app's own chat
  * widget earlier: asked with no document list or product data to ground it,
  * the same model that answers correctly elsewhere invents US business-
  * banking requirements for an Indian bank, and a specific interest rate for
- * a product that has none on file. The point being demonstrated isn't "the
- * model is bad" — it's what plugging an LLM into an enterprise process
- * safely actually requires: a governed, deterministic layer that catches
- * and corrects exactly this class of failure before it reaches a customer.
+ * a product that has none on file.
  *
- * Deliberately never says "Pega" anywhere in this UI: the grounded side is
- * this app's own rule-based assistant reading the industry configuration,
- * not a Pega case or decision rule. Claiming otherwise is the single
- * fastest way to lose a technically literate audience's trust in the rest
- * of the (genuinely Pega-backed) accelerator.
+ * The grounded side is a genuine, live read of Pega's `D_ProductCatalog`
+ * Data Page (see lib/pega/product-catalog.ts and
+ * docs/pega-hallucination-demo-data-page-handoff.md) — not local app
+ * config dressed up as Pega, which is what this demo used to do and was
+ * corrected specifically because it wouldn't survive a technically literate
+ * audience asking "show me the rule." It now would.
  */
-export function HallucinationDemo({
-  industryId = "banking",
-}: {
-  industryId?: IndustryId;
-}) {
+export function HallucinationDemo() {
   const [questionId, setQuestionId] = useState(HALLUCINATION_QUESTIONS[0].id);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +44,7 @@ export function HallucinationDemo({
       const response = await fetch("/api/agents/hallucination-demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId, industryId }),
+        body: JSON.stringify({ questionId }),
       });
       const payload = await response.json();
 
@@ -71,9 +64,9 @@ export function HallucinationDemo({
   return (
     <Card className="space-y-5">
       <SectionTitle
-        eyebrow="Step 1: it hallucinates. Step 2: grounded execution catches it."
+        eyebrow="Step 1: it hallucinates. Step 2: Pega's own data catches it."
         title="Plugging AI into an enterprise, safely"
-        description="Ask the identical question two ways: a raw model with no guardrails, then the same question through this app's governed, deterministic assistant. Both run live — nothing here is scripted text. This isn't Pega deciding — it's the principle Pega-governed AI depends on, made visible."
+        description="Ask the identical question two ways: a raw model with no guardrails, then the same question answered by a live read of Pega's product data. Both run live — nothing here is scripted text, and the second answer comes from Pega, not from this app's own config."
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -130,7 +123,7 @@ export function HallucinationDemo({
           <div className="z-10 mx-auto -my-3 flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-white px-4 py-1.5 shadow-sm">
             <ArrowDown className="h-3.5 w-3.5 text-[var(--color-navy)]" />
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-navy)]">
-              Grounded execution corrects it
+              Pega&apos;s live data corrects it
             </p>
           </div>
 
@@ -138,18 +131,19 @@ export function HallucinationDemo({
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-[var(--color-success)]" />
               <p className="text-sm font-semibold text-[var(--color-ink)]">
-                Step 2 — governed, deterministic execution
+                Step 2 — live read from Pega
               </p>
               <Badge tone={result.governed.answered ? "success" : "info"}>
-                {result.governed.answered ? "From the industry pack" : "Correctly declined"}
+                {result.governed.answered ? "From Pega, live" : "Pega has no such field"}
               </Badge>
             </div>
             <p className="whitespace-pre-line text-sm leading-6 text-[var(--color-ink)]">
               {result.governed.text}
             </p>
             <p className="text-xs text-[var(--color-ink-muted)]">
-              source: {result.governed.source} · rule-based, not a model —
-              the identical question gets the identical answer every time.
+              source: {result.governed.source} · a live DX API read, not a
+              model — the identical question gets the identical answer every
+              time, because it&apos;s the same Pega data every time.
             </p>
             <p className="flex items-start gap-1.5 rounded-xl border border-[var(--color-success)]/40 bg-white px-3 py-2 text-xs text-[var(--color-ink-subtle)]">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-success)]" />
@@ -164,14 +158,15 @@ export function HallucinationDemo({
 
           <p className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm leading-6 text-[var(--color-ink-subtle)]">
             <span className="font-semibold text-[var(--color-ink)]">
-              What the grounded side gets right:{" "}
+              What Pega&apos;s data gets right:{" "}
             </span>
             {result.correction}
           </p>
           <p className="text-xs text-[var(--color-ink-muted)]">
-            Not a Pega decision — this app&apos;s own rule-based assistant,
-            reading fixed configuration data. Shown to make a governance
-            principle concrete, not to demonstrate a Pega case decision.
+            A genuine Pega read, not this app&apos;s own config —
+            Pega&apos;s D_ProductCatalog Data Page, queried live over the DX
+            API for every request. If that read fails, this comparison
+            fails rather than quietly falling back to a local answer.
           </p>
         </div>
       ) : null}
