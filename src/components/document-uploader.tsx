@@ -27,7 +27,10 @@ function ExtractingIndicator() {
   const [stepIndex, setStepIndex] = useState(0);
 
   useEffect(() => {
-    setStepIndex(0);
+    // No need to reset stepIndex here: useState(0) already starts it there,
+    // and the parent only ever renders a fresh instance of this component
+    // (conditionally, when `extracting` becomes true) — there's no case
+    // where this effect runs against a stale, non-zero stepIndex.
     const interval = window.setInterval(() => {
       setStepIndex((current) =>
         Math.min(current + 1, EXTRACTION_STEPS.length - 1),
