@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { GovernanceConsole } from "@/components/governance-console";
 import { HallucinationDemo } from "@/components/hallucination-demo";
+import { WorkflowGovernanceDemo } from "@/components/workflow-governance-demo";
 
 export const metadata: Metadata = {
   title: "AI governance console",
@@ -35,6 +36,7 @@ export default function GovernancePage() {
 
       <main className="mx-auto max-w-6xl space-y-8 px-6 py-10 lg:px-8">
         <HallucinationDemo />
+        <WorkflowGovernanceDemo />
         <GovernanceConsole />
       </main>
     </div>
