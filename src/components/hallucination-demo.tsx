@@ -10,12 +10,13 @@ import { Badge, Button, Card, SectionTitle } from "@/components/ui";
 interface Result {
   question: string;
   correction: string;
+  groundedOn: string;
   ungrounded: { text: string; model: string };
   governed: { text: string; source: string; answered: boolean };
 }
 
 /**
- * Hallucinate, then watch Pega catch it — live.
+ * Hallucinate, then watch grounded, deterministic execution catch it — live.
  *
  * Both questions reproduce a real failure caught in this app's own chat
  * widget earlier: asked with no document list or product data to ground it,
@@ -25,6 +26,12 @@ interface Result {
  * model is bad" — it's what plugging an LLM into an enterprise process
  * safely actually requires: a governed, deterministic layer that catches
  * and corrects exactly this class of failure before it reaches a customer.
+ *
+ * Deliberately never says "Pega" anywhere in this UI: the grounded side is
+ * this app's own rule-based assistant reading the industry configuration,
+ * not a Pega case or decision rule. Claiming otherwise is the single
+ * fastest way to lose a technically literate audience's trust in the rest
+ * of the (genuinely Pega-backed) accelerator.
  */
 export function HallucinationDemo({
   industryId = "banking",
@@ -64,9 +71,9 @@ export function HallucinationDemo({
   return (
     <Card className="space-y-5">
       <SectionTitle
-        eyebrow="Step 1: it hallucinates. Step 2: Pega catches it."
+        eyebrow="Step 1: it hallucinates. Step 2: grounded execution catches it."
         title="Plugging AI into an enterprise, safely"
-        description="Ask the identical question two ways: a raw model with no guardrails, then the same question through governed, deterministic execution. Both run live — nothing here is scripted text."
+        description="Ask the identical question two ways: a raw model with no guardrails, then the same question through this app's governed, deterministic assistant. Both run live — nothing here is scripted text. This isn't Pega deciding — it's the principle Pega-governed AI depends on, made visible."
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -123,7 +130,7 @@ export function HallucinationDemo({
           <div className="z-10 mx-auto -my-3 flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-white px-4 py-1.5 shadow-sm">
             <ArrowDown className="h-3.5 w-3.5 text-[var(--color-navy)]" />
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-navy)]">
-              Pega corrects it
+              Grounded execution corrects it
             </p>
           </div>
 
@@ -144,13 +151,27 @@ export function HallucinationDemo({
               source: {result.governed.source} · rule-based, not a model —
               the identical question gets the identical answer every time.
             </p>
+            <p className="flex items-start gap-1.5 rounded-xl border border-[var(--color-success)]/40 bg-white px-3 py-2 text-xs text-[var(--color-ink-subtle)]">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-success)]" />
+              <span>
+                <span className="font-semibold text-[var(--color-ink)]">
+                  Grounded on:{" "}
+                </span>
+                {result.groundedOn}
+              </span>
+            </p>
           </div>
 
           <p className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm leading-6 text-[var(--color-ink-subtle)]">
             <span className="font-semibold text-[var(--color-ink)]">
-              What Pega corrects:{" "}
+              What the grounded side gets right:{" "}
             </span>
             {result.correction}
+          </p>
+          <p className="text-xs text-[var(--color-ink-muted)]">
+            Not a Pega decision — this app&apos;s own rule-based assistant,
+            reading fixed configuration data. Shown to make a governance
+            principle concrete, not to demonstrate a Pega case decision.
           </p>
         </div>
       ) : null}

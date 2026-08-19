@@ -120,6 +120,7 @@ export async function runHallucinationDemo(
   return {
     question: entry.question,
     correction: entry.correction,
+    groundedOn: entry.groundedOn,
     ungrounded: { text: ungrounded.text, model: ungrounded.model, grounded: false },
     governed: {
       text: governed.message,
