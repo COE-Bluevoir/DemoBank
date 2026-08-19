@@ -71,6 +71,12 @@ const envSchema = z.object({
   // route through the stub bypass — this is only ever a starting value; the
   // presenter panel can flip it per session without a redeploy.
   PEGA_DEMO_MODE_DEFAULT: booleanFromString(false),
+  // The case property the scripted-mode mirror writes the full agent-output
+  // JSON into. Defaults to `pyNote` because no dedicated `AgentResponse`
+  // property exists on the case type yet (see
+  // docs/pega-demo-mode-flag-handoff.md §6) — once Pega adds one, point this
+  // at it and every write flips over with no code change.
+  PEGA_AGENT_RESPONSE_FIELD: z.string().min(1).optional().default("pyNote"),
 
   PEGA_BASE_URL: z.url().optional(),
   PEGA_TOKEN_URL: z.url().optional(),
@@ -177,6 +183,7 @@ export interface ServerConfig {
   demoControlEnabled: boolean;
   demoControlPasscode: string;
   pegaDemoModeDefault: boolean;
+  pegaAgentResponseField: string;
   assistantProvider: RawServerEnv["ASSISTANT_PROVIDER"];
   pegaAssistantUrl?: string;
   openaiApiKey?: string;
@@ -291,6 +298,7 @@ function loadConfig(source: EnvSource): ServerConfig {
     demoControlEnabled: env.DEMO_CONTROL_ENABLED,
     demoControlPasscode: env.DEMO_CONTROL_PASSCODE,
     pegaDemoModeDefault: env.PEGA_DEMO_MODE_DEFAULT,
+    pegaAgentResponseField: env.PEGA_AGENT_RESPONSE_FIELD,
     assistantProvider: env.ASSISTANT_PROVIDER,
     pegaAssistantUrl: env.PEGA_ASSISTANT_URL,
     openaiApiKey: env.OPENAI_API_KEY,

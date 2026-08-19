@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
-import { requirePegaConfig } from "@/lib/config/env";
+import { getServerConfig, requirePegaConfig } from "@/lib/config/env";
 import type { DocumentRequirement } from "@/lib/industry/types";
 import { getIndustryPack, resolveProductName } from "@/lib/industry/registry";
 import { formatFullName } from "@/lib/onboarding/applicant-name";
@@ -1009,8 +1009,13 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
           Execution: scriptedExecutionRows("extraction"),
           // The full extraction result as the agent itself would report
           // it — every field, every confidence score, the planted
-          // discrepancy — not just what Document[] can hold.
-          pyNote: scriptedAgentResponseJson({ addressCorrected: false }),
+          // discrepancy — not just what Document[] can hold. Field name is
+          // configurable (`PEGA_AGENT_RESPONSE_FIELD`, defaults to `pyNote`)
+          // so this points at a real `AgentResponse` property the moment
+          // Pega adds one — see docs/pega-demo-mode-flag-handoff.md §6.
+          [getServerConfig().pegaAgentResponseField]: scriptedAgentResponseJson({
+            addressCorrected: false,
+          }),
         },
         // Forces the real case past whatever the live extraction automation
         // left it at — including a problem-flow assignment — since scripted
@@ -1064,9 +1069,9 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
           Document: scriptedDocumentRows({ addressCorrected: true }),
           CheckResult: scriptedCheckRows(pack.checkProfile),
           Execution: scriptedExecutionRows("screening"),
-          // Supersedes the extraction-stage pyNote with the complete
+          // Supersedes the extraction-stage write with the complete
           // record — corrected address, every screening outcome included.
-          pyNote: scriptedAgentResponseJson({
+          [getServerConfig().pegaAgentResponseField]: scriptedAgentResponseJson({
             addressCorrected: true,
             checkProfile: pack.checkProfile,
           }),

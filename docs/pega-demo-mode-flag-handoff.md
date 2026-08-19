@@ -90,16 +90,29 @@ Not a blocker for the demo — the customer-facing UI has never read this data
 from live Pega (it renders from the app's own fixture data, by design, given
 the live agents' reliability history), and the JSON is genuinely present
 and correct in Pega while the case is active, which is when a presenter
-would open it anyway. But if the intent is for a reviewer to open a
-*completed* case later and see the full agent output, two options:
+would open it anyway. But `pyNote` is a real note field with its own
+purpose, and squatting on it long-term is the wrong end-state even setting
+the resolution-cleanup issue aside — it can collide with an actual note
+someone adds to the case, and there's no guarantee some other automation
+doesn't read or clear it for reasons unrelated to this. **Requesting a real
+`AgentResponse` property is the actual ask here, not an optional nice-to-have:**
 
-1. Add a real `AgentResponse` property (Text-Paragraph, to hold a few KB)
-   to the data model and `pyUpdateCaseDetails`'s view, and exclude it from
-   whatever resolution-time cleanup is clearing `pyNote`.
-2. Identify which resolution-time step is clearing `Document`/`CheckResult`/
-   `Execution`/`pyNote` and either scope it to exclude scripted-mode cases,
-   or confirm it's intentional and this data was never meant to outlive
-   resolution.
+1. Add a real `AgentResponse` property (Text-Paragraph, to hold a few KB) to
+   the data model and `pyUpdateCaseDetails`'s view, dedicated to this and
+   nothing else, and exclude it from whatever resolution-time cleanup is
+   clearing `pyNote`.
+2. Separately, identify which resolution-time step is clearing
+   `Document`/`CheckResult`/`Execution`/`pyNote` and either scope it to
+   exclude scripted-mode cases, or confirm it's intentional and this data
+   was never meant to outlive resolution — that answer matters for
+   `AgentResponse` too, since a new property could get caught in the same
+   cleanup unless it's deliberately excluded.
+
+**On the app side**, the property name is already a single config value
+(`PEGA_AGENT_RESPONSE_FIELD`, defaults to `pyNote`) rather than hardcoded —
+once `AgentResponse` exists and is declared on `pyUpdateCaseDetails`'s view,
+flipping that one setting to `AgentResponse` is the entire migration, no
+code change required.
 
 ## 7. One platform quirk worth knowing regardless
 

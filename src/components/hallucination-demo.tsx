@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, ShieldCheck, ShieldOff } from "lucide-react";
+import { AlertTriangle, ArrowDown, ShieldCheck, ShieldOff } from "lucide-react";
 
 import { HALLUCINATION_QUESTIONS } from "@/lib/agents/hallucination-demo";
 import type { IndustryId } from "@/lib/industry/types";
@@ -9,20 +9,22 @@ import { Badge, Button, Card, SectionTitle } from "@/components/ui";
 
 interface Result {
   question: string;
+  correction: string;
   ungrounded: { text: string; model: string };
   governed: { text: string; source: string; answered: boolean };
 }
 
 /**
- * Grounded versus ungrounded, live.
+ * Hallucinate, then watch Pega catch it — live.
  *
  * Both questions reproduce a real failure caught in this app's own chat
  * widget earlier: asked with no document list or product data to ground it,
  * the same model that answers correctly elsewhere invents US business-
  * banking requirements for an Indian bank, and a specific interest rate for
- * a product that has none on file. The point isn't that the model is bad —
- * it's that "ask an LLM" and "governed, deterministic execution" are
- * different architectures, and the difference shows up as fact, not opinion.
+ * a product that has none on file. The point being demonstrated isn't "the
+ * model is bad" — it's what plugging an LLM into an enterprise process
+ * safely actually requires: a governed, deterministic layer that catches
+ * and corrects exactly this class of failure before it reaches a customer.
  */
 export function HallucinationDemo({
   industryId = "banking",
@@ -62,9 +64,9 @@ export function HallucinationDemo({
   return (
     <Card className="space-y-5">
       <SectionTitle
-        eyebrow="Same question, two architectures"
-        title="What happens without governance"
-        description="Ask an ungrounded model and a deterministic, rule-based one the identical question. Both run live — nothing here is scripted text."
+        eyebrow="Step 1: it hallucinates. Step 2: Pega catches it."
+        title="Plugging AI into an enterprise, safely"
+        description="Ask the identical question two ways: a raw model with no guardrails, then the same question through governed, deterministic execution. Both run live — nothing here is scripted text."
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -98,16 +100,16 @@ export function HallucinationDemo({
       ) : null}
 
       {result ? (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-3 rounded-[20px] border border-[var(--color-error)]/30 bg-[#FEF4F3] p-5">
+        <div className="flex flex-col items-stretch gap-0">
+          <div className="space-y-3 rounded-t-[20px] border border-b-0 border-[var(--color-error)]/30 bg-[#FEF4F3] p-5">
             <div className="flex items-center gap-2">
               <ShieldOff className="h-4 w-4 text-[var(--color-error)]" />
               <p className="text-sm font-semibold text-[var(--color-ink)]">
-                Ungrounded agent
+                Step 1 — outside LLM, no guardrails
               </p>
-              <Badge tone="error">Invented</Badge>
+              <Badge tone="error">Hallucinated</Badge>
             </div>
-            <p className="text-sm leading-6 text-[var(--color-ink)]">
+            <p className="whitespace-pre-line text-sm leading-6 text-[var(--color-ink)]">
               {result.ungrounded.text}
             </p>
             <p className="flex items-center gap-1.5 text-xs text-[var(--color-ink-muted)]">
@@ -118,17 +120,24 @@ export function HallucinationDemo({
             </p>
           </div>
 
-          <div className="space-y-3 rounded-[20px] border border-[var(--color-success)]/30 bg-[#EDF9F4] p-5">
+          <div className="z-10 mx-auto -my-3 flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-white px-4 py-1.5 shadow-sm">
+            <ArrowDown className="h-3.5 w-3.5 text-[var(--color-navy)]" />
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-navy)]">
+              Pega corrects it
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-b-[20px] border border-t-0 border-[var(--color-success)]/30 bg-[#EDF9F4] p-5">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-[var(--color-success)]" />
               <p className="text-sm font-semibold text-[var(--color-ink)]">
-                Governed, deterministic
+                Step 2 — governed, deterministic execution
               </p>
               <Badge tone={result.governed.answered ? "success" : "info"}>
                 {result.governed.answered ? "From the industry pack" : "Correctly declined"}
               </Badge>
             </div>
-            <p className="text-sm leading-6 text-[var(--color-ink)]">
+            <p className="whitespace-pre-line text-sm leading-6 text-[var(--color-ink)]">
               {result.governed.text}
             </p>
             <p className="text-xs text-[var(--color-ink-muted)]">
@@ -136,6 +145,13 @@ export function HallucinationDemo({
               the identical question gets the identical answer every time.
             </p>
           </div>
+
+          <p className="mt-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm leading-6 text-[var(--color-ink-subtle)]">
+            <span className="font-semibold text-[var(--color-ink)]">
+              What Pega corrects:{" "}
+            </span>
+            {result.correction}
+          </p>
         </div>
       ) : null}
     </Card>
