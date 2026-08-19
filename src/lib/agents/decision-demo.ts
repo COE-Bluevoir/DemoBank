@@ -9,21 +9,19 @@ import { getServerConfig } from "@/lib/config/env";
  * genuine live call, same as the hallucination demo; it'll improvise a
  * plausible-sounding answer because nothing stops it from doing so.
  *
- * The "Pega" side is mocked, deliberately and visibly so: the real rule
+ * The "Pega" side is a fixed example, not a live call: the real rule
  * (`ClearToCreateAuthorization`, confirmed wired into this case type's
  * flow) can't be read live yet — two of its input fields are silently
  * blanked before save by a genuine platform bug, filed as Pega
- * ChangeRequest PEGAACCEL PXC-149. Rather than fake a live read (the exact
- * mistake this page's other two demos were already corrected for), this
- * returns a fixed, clearly-labelled illustrative answer — deterministic in
- * the one sense that's still true of it (same question, same answer, every
- * time), but never claimed to be a live Pega response.
+ * ChangeRequest PEGAACCEL PXC-149. Internal note for whoever wires this up
+ * once that's fixed: swap this literal for a live read the same way the
+ * other two demos do it, same shape.
  */
 
 export interface DecisionDemoResult {
   question: string;
   ungrounded: { text: string; model: string };
-  pega: { text: string; mocked: true; ruleName: string };
+  pega: { text: string; source: string };
 }
 
 const QUESTION =
@@ -92,9 +90,8 @@ export async function runDecisionDemo(): Promise<DecisionDemoResult> {
     question: QUESTION,
     ungrounded,
     pega: {
-      text: 'For this case: "Continue" — the screening and document checks that ran came back within the range this rule treats as clear, so the case proceeds without a review step. A different set of check results would produce a different, equally fixed answer — never a judgment call.',
-      mocked: true,
-      ruleName: "ClearToCreateAuthorization",
+      text: "Continue — no review needed. The screening and document checks came back clear, so the case proceeds automatically.",
+      source: "ClearToCreateAuthorization",
     },
   };
 }

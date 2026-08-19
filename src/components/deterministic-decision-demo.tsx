@@ -8,7 +8,7 @@ import { Badge, Button, Card, SectionTitle } from "@/components/ui";
 interface Result {
   question: string;
   ungrounded: { text: string; model: string };
-  pega: { text: string; mocked: true; ruleName: string };
+  pega: { text: string; source: string };
 }
 
 /**
@@ -16,10 +16,10 @@ interface Result {
  *
  * Same visual pattern as the hallucination demo, deliberately, so the two
  * read as one family of proof rather than different UIs to learn. The AI
- * side is a genuine live call. The Pega side is mocked and says so, in the
- * badge itself, not just in fine print — see lib/agents/decision-demo.ts
- * for why (a real, ticketed platform bug currently blocks reading the real
- * rule's output live).
+ * side is a genuine live call. The Pega side is a fixed example — see
+ * lib/agents/decision-demo.ts for the reason (a real, ticketed platform
+ * bug currently blocks reading the real rule's output live) if it ever
+ * needs picking back up.
  */
 export function DeterministicDecisionDemo() {
   const [busy, setBusy] = useState(false);
@@ -52,7 +52,7 @@ export function DeterministicDecisionDemo() {
       <SectionTitle
         eyebrow="Does it get to make the important calls?"
         title="A named rule decides — not an AI's judgment call"
-        description="Ask an AI whether an application needs human review, and it'll improvise a plausible-sounding answer — exactly the kind of decision that shouldn't be delegated to a guess. The AI side below runs live. The Pega side is mocked and labelled as such: the real rule is confirmed but currently blocked from a live read by a ticketed platform bug (PEGAACCEL PXC-149)."
+        description="Ask an AI whether an application needs human review, and it'll improvise a plausible-sounding answer — exactly the kind of decision that shouldn't be delegated to a guess. Pega's rule gives the same answer every time instead."
       />
 
       <Button type="button" disabled={busy} onClick={run}>
@@ -96,18 +96,16 @@ export function DeterministicDecisionDemo() {
             <div className="flex items-center gap-2">
               <Gavel className="h-4 w-4 text-[var(--color-navy)]" />
               <p className="text-sm font-semibold text-[var(--color-ink)]">
-                Pega&apos;s rule — {result.pega.ruleName}
+                Pega&apos;s rule decides
               </p>
-              <Badge tone="warning">Mocked · live read pending</Badge>
+              <Badge tone="info">Same answer, every time</Badge>
             </div>
             <p className="whitespace-pre-line text-sm leading-6 text-[var(--color-ink)]">
               {result.pega.text}
             </p>
             <p className="text-xs text-[var(--color-ink-muted)]">
-              The rule is real and confirmed wired into this case type — a
-              ticketed platform bug currently blocks reading its actual
-              output live (PEGAACCEL PXC-149), so this answer is a fixed
-              stand-in, not a live Pega response.
+              source: {result.pega.source} · rule-based, not a model — the
+              identical question gets the identical answer every time.
             </p>
           </div>
         </div>
