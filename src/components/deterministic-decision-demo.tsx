@@ -1,89 +1,117 @@
-import { CheckCircle2, Gavel, ShieldCheck } from "lucide-react";
+"use client";
 
-import { Badge, Card, SectionTitle } from "@/components/ui";
+import { useState } from "react";
+import { AlertTriangle, ArrowDown, Gavel, ShieldOff } from "lucide-react";
+
+import { Badge, Button, Card, SectionTitle } from "@/components/ui";
+
+interface Result {
+  question: string;
+  ungrounded: { text: string; model: string };
+  pega: { text: string; mocked: true; ruleName: string };
+}
 
 /**
  * "Does it get to make the important calls?" — no, a named rule does.
  *
- * Not a live call, on purpose: `ClearToCreateAuthorization` (the rule
- * genuinely confirmed wired into this case type's flow) has two of its
- * input fields silently blanked before save by a real, confirmed platform
- * bug — two auto-generated Rule-Declare-Expressions with a hardcoded empty
- * expression, filed as Pega ChangeRequest PEGAACCEL PXC-149, fix pending.
- * Faking a live read here would repeat the exact mistake this page's other
- * two demos were already corrected for. Everything below is either a real,
- * captured fact (the rule name, the case, the check results) or clearly
- * marked illustrative — nothing is presented as a live verified read.
+ * Same visual pattern as the hallucination demo, deliberately, so the two
+ * read as one family of proof rather than different UIs to learn. The AI
+ * side is a genuine live call. The Pega side is mocked and says so, in the
+ * badge itself, not just in fine print — see lib/agents/decision-demo.ts
+ * for why (a real, ticketed platform bug currently blocks reading the real
+ * rule's output live).
  */
 export function DeterministicDecisionDemo() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/agents/decision-demo", { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setError(payload.message || "Unable to run the comparison.");
+        return;
+      }
+
+      setResult(payload);
+    } catch {
+      setError("Unable to reach the assistant.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Card className="space-y-5">
       <SectionTitle
         eyebrow="Does it get to make the important calls?"
         title="A named rule decides — not an AI's judgment call"
-        description="Whether an application needs human review isn't left to a model's opinion. A named Pega rule decides, from the same inputs, the same way, every time — and that decision is traceable to a specific rule, not a guess."
+        description="Ask an AI whether an application needs human review, and it'll improvise a plausible-sounding answer — exactly the kind of decision that shouldn't be delegated to a guess. The AI side below runs live. The Pega side is mocked and labelled as such: the real rule is confirmed but currently blocked from a live read by a ticketed platform bug (PEGAACCEL PXC-149)."
       />
 
-      <div className="space-y-3 rounded-[20px] border border-[var(--color-border)] bg-white p-5">
-        <div className="flex items-center gap-2">
-          <Gavel className="h-4 w-4 text-[var(--color-navy)]" />
-          <p className="text-sm font-semibold text-[var(--color-ink)]">
-            The rule, confirmed wired into this case type
-          </p>
-        </div>
-        <p className="text-sm leading-6 text-[var(--color-ink-subtle)]">
-          <code className="text-[var(--color-ink)]">ClearToCreateAuthorization</code>{" "}
-          — reads <code>.TechnicalStatus</code>, <code>.ReasonCode</code> and{" "}
-          <code>.pyStatusWork</code> off the case and returns the routing
-          decision. Confirmed by tracing the actual flow, not inferred from a
-          rule name.
-        </p>
-      </div>
+      <Button type="button" disabled={busy} onClick={run}>
+        {busy ? "Asking both…" : "Ask both"}
+      </Button>
 
-      <div className="space-y-3 rounded-[20px] border border-[var(--color-success)]/30 bg-[#EDF9F4] p-5">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-[var(--color-success)]" />
-          <p className="text-sm font-semibold text-[var(--color-ink)]">
-            A real, captured run
-          </p>
-          <Badge tone="success">Case ODHMNT-AGENTICC-WORK C-209050</Badge>
-        </div>
-        <p className="text-sm leading-6 text-[var(--color-ink-subtle)]">
-          Driven live through Perform Screening. All four checks came back
-          deterministic, same-shape results, and the case resolved to
-          Complete on them — not on any model&apos;s opinion:
+      {error ? (
+        <p className="rounded-2xl bg-[#FEE4E2] px-4 py-3 text-sm text-[var(--color-error)]">
+          {error}
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {[
-            "SanctionsCheck — Passed",
-            "PEPCheck — Passed",
-            "DuplicateCustomerCheck — Passed",
-            "DocumentFraudCheck — Passed",
-          ].map((row) => (
-            <p
-              key={row}
-              className="rounded-lg bg-white px-3 py-2 text-xs text-[var(--color-ink)]"
-            >
-              {row}
+      ) : null}
+
+      {result ? (
+        <div className="flex flex-col items-stretch gap-0">
+          <div className="space-y-3 rounded-t-[20px] border border-b-0 border-[var(--color-error)]/30 bg-[#FEF4F3] p-5">
+            <div className="flex items-center gap-2">
+              <ShieldOff className="h-4 w-4 text-[var(--color-error)]" />
+              <p className="text-sm font-semibold text-[var(--color-ink)]">
+                AI&apos;s judgment call
+              </p>
+              <Badge tone="error">Improvised</Badge>
+            </div>
+            <p className="whitespace-pre-line text-sm leading-6 text-[var(--color-ink)]">
+              {result.ungrounded.text}
             </p>
-          ))}
-        </div>
-      </div>
+            <p className="flex items-center gap-1.5 text-xs text-[var(--color-ink-muted)]">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {result.ungrounded.model} · live call, no rule behind it —
+              ask again and the wording (or the verdict) can change.
+            </p>
+          </div>
 
-      <div className="flex items-start gap-2 rounded-2xl border border-[var(--color-warning)]/40 bg-[#FBF1E0] px-4 py-3 text-xs leading-5 text-[var(--color-ink-subtle)]">
-        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-warning)]" />
-        <span>
-          <span className="font-semibold text-[var(--color-ink)]">
-            What&apos;s not shown live yet:{" "}
-          </span>
-          Two of this rule&apos;s input fields aren&apos;t persisting today —
-          a confirmed platform bug (two auto-generated rules silently blank
-          them before save), already filed as Pega ChangeRequest{" "}
-          <code>PEGAACCEL PXC-149</code>, fix pending. Once resolved, this
-          panel reads the rule&apos;s actual output live, the same way the
-          two demos above do.
-        </span>
-      </div>
+          <div className="z-10 mx-auto -my-3 flex items-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-white px-4 py-1.5 shadow-sm">
+            <ArrowDown className="h-3.5 w-3.5 text-[var(--color-navy)]" />
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-navy)]">
+              A named rule decides instead
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-b-[20px] border border-t-0 border-[var(--color-navy)]/25 bg-[#F4F7FB] p-5">
+            <div className="flex items-center gap-2">
+              <Gavel className="h-4 w-4 text-[var(--color-navy)]" />
+              <p className="text-sm font-semibold text-[var(--color-ink)]">
+                Pega&apos;s rule — {result.pega.ruleName}
+              </p>
+              <Badge tone="warning">Mocked · live read pending</Badge>
+            </div>
+            <p className="whitespace-pre-line text-sm leading-6 text-[var(--color-ink)]">
+              {result.pega.text}
+            </p>
+            <p className="text-xs text-[var(--color-ink-muted)]">
+              The rule is real and confirmed wired into this case type — a
+              ticketed platform bug currently blocks reading its actual
+              output live (PEGAACCEL PXC-149), so this answer is a fixed
+              stand-in, not a live Pega response.
+            </p>
+          </div>
+        </div>
+      ) : null}
     </Card>
   );
 }
