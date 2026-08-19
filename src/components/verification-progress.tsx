@@ -1,6 +1,7 @@
 import { Bot, ShieldCheck, Landmark, FileSearch } from "lucide-react";
 
-import type { OnboardingStatus } from "@/lib/onboarding/types";
+import { DocumentExtractionResults } from "@/components/document-extraction-results";
+import type { DocumentView, OnboardingStatus } from "@/lib/onboarding/types";
 import { Card, SectionTitle } from "@/components/ui";
 import { cn } from "@/lib/onboarding/utils";
 
@@ -61,19 +62,26 @@ function stageIndex(status: OnboardingStatus) {
 
 export function VerificationProgress({
   status,
+  documents = [],
 }: {
   status: OnboardingStatus;
+  documents?: DocumentView[];
 }) {
   const completeIndex = stageIndex(status);
+  // "Information extracted" is the second stage — once it's no longer the
+  // very first thing happening, the agent has had a pass at the documents,
+  // so it's fair to reveal what it found.
+  const extractionRevealed = completeIndex >= 2;
 
   return (
-    <Card className="space-y-6">
-      <SectionTitle
-        title="Verification progress"
-        description="Behind the scenes, Pega's agents are working the case. Backend state determines each stage and the interface stays customer-safe."
-      />
-      <div className="space-y-4" aria-live="polite">
-        {stages.map((stage, index) => {
+    <div className="space-y-6">
+      <Card className="space-y-6">
+        <SectionTitle
+          title="Verification progress"
+          description="Behind the scenes, Pega's agents are working the case. Backend state determines each stage and the interface stays customer-safe."
+        />
+        <div className="space-y-4" aria-live="polite">
+          {stages.map((stage, index) => {
           const completed = index < completeIndex;
           const current = index + 1 === completeIndex;
           const Icon = stage.icon;
@@ -119,8 +127,11 @@ export function VerificationProgress({
               </div>
             </div>
           );
-        })}
-      </div>
-    </Card>
+          })}
+        </div>
+      </Card>
+
+      {extractionRevealed ? <DocumentExtractionResults documents={documents} /> : null}
+    </div>
   );
 }

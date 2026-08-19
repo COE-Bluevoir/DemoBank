@@ -84,7 +84,16 @@ export default function HomePage() {
 
         <section className="bg-[var(--color-surface-soft)]">
           <div className="mx-auto max-w-7xl px-6 py-14 lg:px-8">
-            <ProductCard />
+            <h2 className="text-2xl font-semibold tracking-tight text-[var(--color-ink)]">
+              Business banking products
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-ink-subtle)]">
+              The same guided, document-backed application opens any of
+              these — pick the one that fits your business.
+            </p>
+            <div className="mt-6">
+              <ProductCard />
+            </div>
           </div>
         </section>
 

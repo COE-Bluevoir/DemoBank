@@ -6,7 +6,9 @@ import {
   getIndustryPack,
   isIndustryId,
   listIndustryPacks,
+  listProductOptions,
   resolveIndustryPack,
+  resolveProductName,
 } from "@/lib/industry/registry";
 import { applicantSchema } from "@/lib/onboarding/schemas";
 
@@ -44,6 +46,49 @@ describe("industry registry", () => {
     expect(resolveIndustryPack(undefined).id).toBe("banking");
     expect(resolveIndustryPack("automotive").id).toBe("banking");
     expect(resolveIndustryPack("telecom").id).toBe("telecom");
+  });
+});
+
+describe("product options", () => {
+  it("offers banking's several products, distinctly coded and named", () => {
+    const options = listProductOptions(getIndustryPack("banking"));
+
+    expect(options.length).toBeGreaterThan(1);
+    expect(new Set(options.map((option) => option.code)).size).toBe(
+      options.length,
+    );
+    expect(new Set(options.map((option) => option.name)).size).toBe(
+      options.length,
+    );
+  });
+
+  it("falls back to the pack's single default for an industry with only one product", () => {
+    const pack = getIndustryPack("insurance");
+    const options = listProductOptions(pack);
+
+    expect(options).toEqual([
+      {
+        code: pack.productOrServiceCode,
+        name: pack.brand.productName,
+        tagline: pack.brand.tagline,
+        description: pack.objective,
+      },
+    ]);
+  });
+
+  it("resolves a known product code to its display name", () => {
+    const pack = getIndustryPack("banking");
+    const [firstOption] = listProductOptions(pack);
+
+    expect(resolveProductName(pack, firstOption.code)).toBe(firstOption.name);
+  });
+
+  it("falls back to the pack's default name for an unrecognised product code", () => {
+    const pack = getIndustryPack("banking");
+
+    expect(resolveProductName(pack, "NOT-A-REAL-CODE")).toBe(
+      pack.brand.productName,
+    );
   });
 });
 

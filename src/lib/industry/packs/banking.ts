@@ -83,6 +83,33 @@ export const bankingPack: IndustryPack = {
     accent: "#1F4FD8",
   },
 
+  // Three business banking products, all opening through the identical
+  // document/screening journey below — only the name, positioning and
+  // `ProductIntent` sent to Pega change with which one a customer picks.
+  products: [
+    {
+      code: "EVERYDAY_PLUS",
+      name: "Everyday Plus Account",
+      tagline: "Recommended for salary and everyday banking",
+      description:
+        "A premium everyday account experience built for salary credits, secure digital payments and regulated onboarding clarity.",
+    },
+    {
+      code: "BUSINESS_GROWTH",
+      name: "Business Growth Account",
+      tagline: "Built for scaling operations",
+      description:
+        "Higher transaction limits and dedicated relationship support for a business that has outgrown its first account.",
+    },
+    {
+      code: "MERCHANT_COLLECTIONS",
+      name: "Merchant Collections Account",
+      tagline: "For businesses collecting customer payments",
+      description:
+        "Same-day settlement and built-in reconciliation for a business taking payments from customers at scale.",
+    },
+  ],
+
   terminology: {
     customerNoun: "customer",
     productNoun: "account",

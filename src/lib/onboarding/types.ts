@@ -173,7 +173,8 @@ export interface OnboardingCaseView {
 }
 
 export interface CreateOnboardingCaseRequest {
-  productCode: "EVERYDAY_PLUS";
+  /** One of the chosen industry's `ProductOption.code` values. */
+  productCode: string;
   channel: "WEB";
   scenarioId: ScenarioId;
   /**

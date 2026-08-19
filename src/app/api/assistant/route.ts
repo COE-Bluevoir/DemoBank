@@ -35,7 +35,7 @@ const requestSchema = z.object({
    * Absent means "use whatever ASSISTANT_PROVIDER says" — the widget's
    * presenter toggle is the only caller expected to set this today.
    */
-  provider: z.enum(["pega", "onboarding-guide"]).optional(),
+  provider: z.enum(["pega", "onboarding-guide", "openai"]).optional(),
 });
 
 export async function POST(request: Request) {

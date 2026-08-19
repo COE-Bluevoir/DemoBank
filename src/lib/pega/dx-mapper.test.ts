@@ -115,6 +115,62 @@ describe("DX v2 stage mapping", () => {
     ).toBe("DOCUMENTS_REQUIRED");
   });
 
+  it("flags an address discrepancy scripted mode has mirrored, even mid-verification", () => {
+    const info = caseInfo({ stageID: "PRIM2", stageLabel: "Verify Identity" });
+
+    expect(
+      mapDxStatus(info, { addressMismatchPending: true, addressConfirmed: false }),
+    ).toBe("ADDRESS_CONFIRMATION_REQUIRED");
+  });
+
+  it("stops flagging the address discrepancy once the customer has confirmed it", () => {
+    const info = caseInfo({ stageID: "PRIM2", stageLabel: "Verify Identity" });
+
+    expect(
+      mapDxStatus(info, { addressMismatchPending: true, addressConfirmed: true }),
+    ).toBe("VERIFYING_DOCUMENTS");
+  });
+
+  it("shows screening in progress while scripted mode's screening mirror is pending", () => {
+    const info = caseInfo({ stageID: "PRIM2", stageLabel: "Verify Identity" });
+
+    expect(mapDxStatus(info, { screeningPending: true })).toBe(
+      "SCREENING_IN_PROGRESS",
+    );
+  });
+
+  it("routes into unable-to-continue on a live problem-flow assignment", () => {
+    const info = caseInfo({
+      stageID: "PRIM2",
+      stageLabel: "Verify Identity",
+      assignments: [
+        {
+          ID: "ASSIGN-WORKBASKET X!FLOWPROBLEMS",
+          name: "Problem Flow Assignment",
+          processID: "FlowProblems",
+        },
+      ],
+    });
+
+    expect(mapDxStatus(info)).toBe("UNABLE_TO_CONTINUE");
+  });
+
+  it("ignores a stale problem-flow assignment once scripted mode owns the case", () => {
+    const info = caseInfo({
+      stageID: "PRIM6",
+      stageLabel: "Complete",
+      assignments: [
+        {
+          ID: "ASSIGN-WORKBASKET X!FLOWPROBLEMS",
+          name: "Problem Flow Assignment",
+          processID: "FlowProblems",
+        },
+      ],
+    });
+
+    expect(mapDxStatus(info, { scriptedDriveActive: true })).toBe("COMPLETED");
+  });
+
   it("treats a resolved-completed case as complete whatever the stage says", () => {
     expect(
       mapDxStatus(
@@ -266,6 +322,45 @@ describe("DX v2 case view mapping", () => {
         content: { CustomerID: "CUST-1", AccountID: "ACC-9" },
       }),
       context,
+    );
+
+    expect(complete.outcome).toEqual({
+      customerReference: "CUST-1",
+      accountReference: "ACC-9",
+      productName: "Everyday Plus Account",
+    });
+  });
+
+  it("synthesizes reference numbers for a scripted-mode case Pega never ran Create Customer on", () => {
+    const complete = mapDxCaseToView(
+      caseInfo({ status: "Resolved-Completed", businessID: "C-208063" }),
+      { ...context, collected: { scriptedDriveActive: true } },
+    );
+
+    expect(complete.outcome).toEqual({
+      customerReference: "CUS-208063",
+      accountReference: "EPA-208063",
+      productName: "Everyday Plus Account",
+    });
+  });
+
+  it("does not synthesize reference numbers outside scripted mode", () => {
+    const complete = mapDxCaseToView(
+      caseInfo({ status: "Resolved-Completed", businessID: "C-208063" }),
+      context,
+    );
+
+    expect(complete.outcome).toBeUndefined();
+  });
+
+  it("prefers Pega's own reference numbers over synthesized ones when both exist", () => {
+    const complete = mapDxCaseToView(
+      caseInfo({
+        status: "Resolved-Completed",
+        businessID: "C-208063",
+        content: { CustomerID: "CUST-1", AccountID: "ACC-9" },
+      }),
+      { ...context, collected: { scriptedDriveActive: true } },
     );
 
     expect(complete.outcome).toEqual({

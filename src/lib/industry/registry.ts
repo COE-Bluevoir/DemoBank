@@ -1,7 +1,7 @@
 import { bankingPack } from "@/lib/industry/packs/banking";
 import { insurancePack } from "@/lib/industry/packs/insurance";
 import { telecomPack } from "@/lib/industry/packs/telecom";
-import type { IndustryId, IndustryPack } from "@/lib/industry/types";
+import type { IndustryId, IndustryPack, ProductOption } from "@/lib/industry/types";
 
 /**
  * Industry pack registry.
@@ -41,4 +41,33 @@ export function resolveIndustryPack(value: string | undefined): IndustryPack {
 /** Launcher listing, reference implementation first. */
 export function listIndustryPacks(): IndustryPack[] {
   return [bankingPack, insurancePack, telecomPack];
+}
+
+/** Every product a pack offers, or its single default if it declares none. */
+export function listProductOptions(pack: IndustryPack): readonly ProductOption[] {
+  if (pack.products && pack.products.length > 0) {
+    return pack.products;
+  }
+
+  return [
+    {
+      code: pack.productOrServiceCode,
+      name: pack.brand.productName,
+      tagline: pack.brand.tagline,
+      description: pack.objective,
+    },
+  ];
+}
+
+/**
+ * The display name for a chosen product, falling back to the pack's own
+ * default whenever `productCode` doesn't match a declared option — an
+ * unrecognised code (an old link, a typo) degrades to the reference product
+ * rather than showing a blank or throwing.
+ */
+export function resolveProductName(pack: IndustryPack, productCode: string): string {
+  return (
+    pack.products?.find((option) => option.code === productCode)?.name ??
+    pack.brand.productName
+  );
 }

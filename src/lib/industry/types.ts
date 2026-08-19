@@ -112,6 +112,23 @@ export interface IndustryBrand {
   accent: string;
 }
 
+/**
+ * One of several products the same journey can open.
+ *
+ * The document/check/screening requirements are identical whichever one is
+ * picked — they all resolve to the same underlying onboarding case — this
+ * only varies which product name is presented and sent to Pega as
+ * `ProductIntent`, so a customer who picked "Business Growth Account" sees
+ * that name through the whole journey rather than the pack's single default.
+ */
+export interface ProductOption {
+  /** Matches `CreateOnboardingCaseRequest.productCode`. */
+  code: string;
+  name: string;
+  tagline: string;
+  description: string;
+}
+
 export interface IndustryPack {
   id: IndustryId;
   /** Sent to the orchestration layer; selects behaviour, not presentation. */
@@ -130,6 +147,13 @@ export interface IndustryPack {
   /** One line describing the onboarding objective for this industry. */
   objective: string;
   brand: IndustryBrand;
+  /**
+   * Products a customer can choose between for this industry, each opening
+   * the same underlying journey. Absent (or a single entry) for an industry
+   * pack with only one product — `brand.productName` remains the fallback
+   * whenever a `productCode` doesn't match an entry here.
+   */
+  products?: readonly ProductOption[];
   terminology: IndustryTerminology;
   intakeFields: readonly IntakeField[];
   requiredDocuments: readonly RequiredDocument[];

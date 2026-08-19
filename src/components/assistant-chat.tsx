@@ -44,9 +44,9 @@ export function AssistantChat({
   // Presenter-facing override of which backend answers. Defaults to Pega —
   // switching mid-conversation is fine, since each request carries its own
   // choice; this is a live safety valve if the Pega agent is unreachable.
-  const [provider, setProvider] = useState<"pega" | "onboarding-guide">(
-    "pega",
-  );
+  const [provider, setProvider] = useState<
+    "pega" | "onboarding-guide" | "openai"
+  >("openai");
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -168,6 +168,18 @@ export function AssistantChat({
             ].join(" ")}
           >
             Built-in
+          </button>
+          <button
+            type="button"
+            onClick={() => setProvider("openai")}
+            className={[
+              "rounded-full px-3 py-1 transition",
+              provider === "openai"
+                ? "bg-[var(--color-navy)] text-white"
+                : "text-[var(--color-ink-muted)]",
+            ].join(" ")}
+          >
+            OpenAI
           </button>
           <button
             type="button"

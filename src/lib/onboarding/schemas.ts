@@ -36,7 +36,11 @@ export const confirmAddressSchema = z.object({
 });
 
 export const createCaseSchema = z.object({
-  productCode: z.literal("EVERYDAY_PLUS"),
+  // One of `IndustryPack.products[].code` for the chosen industry, when that
+  // pack offers more than one — otherwise the pack's own single default.
+  // Not a fixed literal: which codes are valid is pack data, not a schema
+  // concern, and the pack itself falls back cleanly on an unrecognised one.
+  productCode: z.string().min(1),
   channel: z.literal("WEB"),
   scenarioId: z.enum(["ADDRESS_PEP_REVIEW", "HAPPY_PATH", "SERVICE_TIMEOUT"]),
   industryId: z.enum(["banking", "insurance", "telecom"]).default("banking"),

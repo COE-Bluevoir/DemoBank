@@ -113,11 +113,14 @@ const envSchema = z.object({
    * silently change when the other is switched.
    */
   ASSISTANT_PROVIDER: z
-    .enum(["onboarding-guide", "pega"])
+    .enum(["onboarding-guide", "pega", "openai"])
     .optional()
     .default("onboarding-guide"),
   /** Pega's conversational endpoint. Required only when Pega answers. */
   PEGA_ASSISTANT_URL: z.string().url().optional(),
+  /** Required only when the assistant is answered by OpenAI. */
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_MODEL: z.string().min(1).optional().default("gpt-4o-mini"),
   BEDROCK_REGION: z.string().min(1).optional(),
   /** Routing and classification. Cheap model, high call volume. */
   BEDROCK_MODEL_ID: z.string().min(1).optional().default("amazon.nova-2-lite-v1:0"),
@@ -167,6 +170,8 @@ export interface ServerConfig {
   pegaDemoModeDefault: boolean;
   assistantProvider: RawServerEnv["ASSISTANT_PROVIDER"];
   pegaAssistantUrl?: string;
+  openaiApiKey?: string;
+  openaiModel: string;
   serviceApiKey?: string;
   documentStorageDir?: string;
   storageDriver: RawServerEnv["STORAGE_DRIVER"];
@@ -276,6 +281,8 @@ function loadConfig(source: EnvSource): ServerConfig {
     pegaDemoModeDefault: env.PEGA_DEMO_MODE_DEFAULT,
     assistantProvider: env.ASSISTANT_PROVIDER,
     pegaAssistantUrl: env.PEGA_ASSISTANT_URL,
+    openaiApiKey: env.OPENAI_API_KEY,
+    openaiModel: env.OPENAI_MODEL,
     serviceApiKey: env.SERVICE_API_KEY,
     documentStorageDir: env.DOCUMENT_STORAGE_DIR,
     storageDriver: env.STORAGE_DRIVER,

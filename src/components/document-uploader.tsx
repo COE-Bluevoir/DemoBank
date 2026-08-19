@@ -1,11 +1,56 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Upload, X } from "lucide-react";
 
 import type { DocumentRequirement, IndustryPack } from "@/lib/industry/types";
 import type { DocumentKind, DocumentView } from "@/lib/onboarding/types";
 import { formatBytes } from "@/lib/onboarding/utils";
 import { Badge, Button, Card, SectionTitle } from "@/components/ui";
+
+/**
+ * What this call is actually doing, in order — real steps, not decoration.
+ * Rotated on a timer rather than tied to a real event stream: the app has no
+ * mid-call progress from Pega to report, and a bar that visibly moves plus
+ * text that visibly changes reads as "working" where a static pulse reads as
+ * "stuck", even though neither one is more truthful about the real state.
+ */
+const EXTRACTION_STEPS = [
+  "Uploading documents to Pega…",
+  "Registering attachments on the case…",
+  "Document Extraction Agent reading the files…",
+  "Comparing details across documents…",
+  "Almost there…",
+];
+
+function ExtractingIndicator() {
+  const [stepIndex, setStepIndex] = useState(0);
+
+  useEffect(() => {
+    setStepIndex(0);
+    const interval = window.setInterval(() => {
+      setStepIndex((current) =>
+        Math.min(current + 1, EXTRACTION_STEPS.length - 1),
+      );
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="w-full space-y-2 sm:w-72">
+      <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-soft)]">
+        <div className="animate-indeterminate-bar h-full w-1/3 rounded-full bg-[var(--color-primary)]" />
+      </div>
+      <p
+        className="text-sm font-medium text-[var(--color-primary)]"
+        aria-live="polite"
+      >
+        {EXTRACTION_STEPS[stepIndex]}
+      </p>
+    </div>
+  );
+}
 
 interface UploadingState {
   documentCode: string;
@@ -110,6 +155,7 @@ export function DocumentUploader({
   documents,
   uploading,
   busy,
+  extracting,
   onFileChange,
   onRemove,
   onUseDemoDocuments,
@@ -119,6 +165,13 @@ export function DocumentUploader({
   documents: DocumentView[];
   uploading?: UploadingState | null;
   busy?: boolean;
+  /**
+   * The Continue submission is in flight. Distinct from `busy` because this
+   * one call can legitimately run for up to a minute — it hands documents to
+   * Pega and waits on a wait shape in Verify Identity — so it gets its own
+   * message rather than reusing the generic disabled/spinner state.
+   */
+  extracting?: boolean;
   onFileChange: (requirement: DocumentRequirement, file: File) => void;
   onRemove: (kind: DocumentKind) => void;
   onUseDemoDocuments: () => void;
@@ -157,14 +210,17 @@ export function DocumentUploader({
           type="button"
           onClick={onContinue}
         >
-          Continue
+          {extracting ? "Extracting…" : "Continue"}
         </Button>
-        <p className="text-sm text-[var(--color-ink-subtle)]">
-          {documents.length > 0
-            ? "Continue when you are ready to submit these attachments for verification."
-            : "Upload at least one document to enable Continue, or use the sample pack."}
-        </p>
+        {!extracting ? (
+          <p className="text-sm text-[var(--color-ink-subtle)]">
+            {documents.length > 0
+              ? "Continue when you are ready to submit these attachments for verification."
+              : "Upload at least one document to enable Continue, or use the sample pack."}
+          </p>
+        ) : null}
       </div>
+      {extracting ? <ExtractingIndicator /> : null}
     </Card>
   );
 }

@@ -4,10 +4,17 @@ import { z } from "zod";
 
 import { requirePegaConfig } from "@/lib/config/env";
 import type { DocumentRequirement } from "@/lib/industry/types";
-import { getIndustryPack } from "@/lib/industry/registry";
+import { getIndustryPack, resolveProductName } from "@/lib/industry/registry";
 import { formatFullName } from "@/lib/onboarding/applicant-name";
 import { digitsOnly } from "@/lib/onboarding/phone-number";
 import { getDocumentStorage } from "@/lib/storage/document-storage";
+import { getPegaDemoModeEnabled } from "@/lib/onboarding/pega-demo-mode";
+import { mirrorScriptedStep } from "@/lib/pega/scripted-drive";
+import {
+  scriptedCheckRows,
+  scriptedDocumentRows,
+  scriptedExecutionRows,
+} from "@/lib/pega/scripted-narrative";
 import type {
   AssistantMessage,
   CreateOnboardingCaseRequest,
@@ -269,6 +276,39 @@ type CaseIntegrationState = PegaCaseState;
 const MAX_CHAINED_ACTIONS = 8;
 
 /**
+ * Scripted mode's mirror calls (see `runDueScriptedMirror` below) now resolve
+ * in a couple of seconds rather than the ~70s the live extraction/screening
+ * agents used to take. Resolving that fast, synchronously, would skip past
+ * `VerificationProgress`'s staged narrative before a presenter — or an
+ * executive audience — ever saw it: the response would already carry the
+ * final status. These durations hold the customer-visible status one step
+ * behind the real mirror just long enough for the existing 2.2s poll
+ * (`onboarding-flow.tsx`'s `shouldPoll` effect) to pick up the staged
+ * reveal, the same way it always did when Pega's own processing took real
+ * wall-clock time.
+ */
+const SCRIPTED_EXTRACTION_PACING_MS = 6_000;
+const SCRIPTED_SCREENING_PACING_MS = 7_000;
+
+/**
+ * A scripted-mode mirror this app owes the real case, due once real time has
+ * passed rather than once a background timer fires.
+ *
+ * `setTimeout` does not survive past the response in this request model —
+ * confirmed live: a background mirror scheduled that way simply never ran,
+ * silently, with nothing in the logs to say so. `dueAt` is a wall-clock
+ * deadline instead, checked and (if due) run at the top of every subsequent
+ * request for this case — `getCase` (what the frontend's poll calls) and
+ * `submitAction` both check it before doing anything else. This works
+ * identically whether the process outlives the response or not, which a
+ * background timer never could.
+ */
+interface ScriptedMirrorMarker {
+  kind: "extraction" | "screening";
+  dueAt: number;
+}
+
+/**
  * Load a case's integration state, seeding a default if none is stored.
  *
  * A missing entry is not an error: it happens after a deployment or when a
@@ -377,7 +417,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       body: {
         caseTypeID: this.caseTypeId,
         content: {
-          ProductIntent: pack.brand.productName,
+          ProductIntent: resolveProductName(pack, request.productCode),
         },
       },
     });
@@ -391,8 +431,12 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
       version: 1,
       eTag,
       lastUpdateTime: caseInfo.lastUpdateTime,
-      // Seeded so later steps that ask for the product again can answer.
-      collected: { productIntent: request.productCode },
+      // Seeded so later steps that ask for the product again can answer —
+      // the resolved display name, not the raw code: `toPegaContent` sends
+      // whatever is here straight through as `ProductIntent`, and every
+      // later submission (including scripted mode's mirror) would otherwise
+      // overwrite the name this case was created with with its own code.
+      collected: { productIntent: resolveProductName(pack, request.productCode) },
     });
 
     return {
@@ -405,6 +449,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   }
 
   async getCase(caseId: string): Promise<OnboardingCaseView> {
+    await this.runDueScriptedMirror(caseId);
     const { caseInfo, state } = await this.readCase(caseId);
 
     return mapDxCaseToView(caseInfo, {
@@ -420,6 +465,7 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
     caseId: string,
     request: SubmitCaseActionRequest,
   ): Promise<OnboardingCaseView> {
+    await this.runDueScriptedMirror(caseId);
     const { caseInfo, state } = await this.readCase(caseId);
 
     if (request.actionId === "USE_DEMO_DOCUMENTS") {
@@ -444,10 +490,50 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
         });
       }
 
-      await this.handoverDocumentsToPega(caseId, {
-        fillMissingWithSamples: true,
+      await this.handoverDocumentsResilient(caseId);
+      // Due later, not run now: see `ScriptedMirrorMarker`. The view
+      // returned below reflects the case as it stands right now — documents
+      // provided, real stage not yet jumped — which `mapDxStatus` already
+      // reads as VERIFYING_DOCUMENTS, giving the customer a genuine (if
+      // brief) verification-in-progress screen instead of an instant jump
+      // to the discrepancy screen.
+      await this.scheduleExtractionMirror(caseId);
+
+      const latest = await this.readCase(caseId);
+      return mapDxCaseToView(latest.caseInfo, {
+        scenarioId: latest.state.scenarioId,
+        industryId: latest.state.industryId,
+        caseVersion: latest.state.version,
+        correlationId: latest.state.correlationId,
+        collected: latest.state.collected,
       });
-      await this.syncCustomerOnboardingName(caseId);
+    }
+
+    if (
+      request.actionId === "CONFIRM_ADDRESS" &&
+      getPegaDemoModeEnabled() &&
+      state.collected.addressMismatchPending === true
+    ) {
+      state.collected = {
+        ...state.collected,
+        // Carries `selectedAddress`/`confirmed` — read by
+        // `mirrorScreeningForScriptedMode` via `toPegaContent` to write a
+        // real `Address` page onto the case, and skipped everywhere else in
+        // this special-cased branch, unlike the generic path below which
+        // always merges `request.data`.
+        ...(request.data ?? {}),
+        addressMismatchPending: false,
+        addressConfirmed: true,
+        // Read by `mapDxStatus` as SCREENING_IN_PROGRESS until the due
+        // mirror below runs — same pacing purpose as `addressMismatchPending`
+        // above, one stage further on.
+        screeningPending: true,
+        scriptedMirror: {
+          kind: "screening",
+          dueAt: Date.now() + SCRIPTED_SCREENING_PACING_MS,
+        } satisfies ScriptedMirrorMarker,
+      };
+      await saveState(caseId, state);
 
       const latest = await this.readCase(caseId);
       return mapDxCaseToView(latest.caseInfo, {
@@ -795,10 +881,193 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
   private async attachSampleDocuments(
     caseId: string,
   ): Promise<OnboardingCaseView> {
-    await this.handoverDocumentsToPega(caseId, {
-      fillMissingWithSamples: true,
-    });
+    await this.handoverDocumentsResilient(caseId);
+    // Due later, not run now — same pacing reason as the CONTINUE_DOCUMENTS
+    // path. `getCase` below checks the marker itself and, called this soon
+    // after setting it, correctly finds nothing due yet.
+    await this.scheduleExtractionMirror(caseId);
     return this.getCase(caseId);
+  }
+
+  /** Set an `extraction`-kind `ScriptedMirrorMarker`, due after the pacing delay. */
+  private async scheduleExtractionMirror(caseId: string): Promise<void> {
+    const state = await loadState(caseId);
+
+    if (!getPegaDemoModeEnabled() || state.industryId !== "banking") {
+      return;
+    }
+
+    state.collected = {
+      ...state.collected,
+      scriptedMirror: {
+        kind: "extraction",
+        dueAt: Date.now() + SCRIPTED_EXTRACTION_PACING_MS,
+      } satisfies ScriptedMirrorMarker,
+    };
+    await saveState(caseId, state);
+  }
+
+  /**
+   * Submit the documents to Pega, skipping the slow part when scripted mode
+   * will take over anyway.
+   *
+   * `handoverDocumentsToPega` normally submits the real CollectAddress flow
+   * action after registering attachments, and that submission is what runs
+   * into the live extraction agent's wait shape — slow enough to exceed even
+   * the 60s ceiling on `PEGA_TIMEOUT_MS` on its own, before any agent
+   * flakiness is even in play. In scripted mode that confirmation is not
+   * needed: `mirrorExtractionForScriptedMode` writes the outcome directly and
+   * forces the stage forward regardless, so this stops right after the
+   * (fast, reliable) attachment registration. Outside scripted mode nothing
+   * changes here. Kept resilient to a genuine failure either way — a scripted
+   * demo must never hard-fail on something the mirror step is about to paper
+   * over regardless.
+   */
+  private async handoverDocumentsResilient(caseId: string): Promise<void> {
+    const state = await loadState(caseId);
+    const scripted = getPegaDemoModeEnabled() && state.industryId === "banking";
+
+    try {
+      await this.handoverDocumentsToPega(caseId, {
+        fillMissingWithSamples: true,
+        skipFlowActionSubmit: scripted,
+      });
+      await this.syncCustomerOnboardingName(caseId);
+    } catch (error) {
+      if (!scripted) {
+        throw error;
+      }
+
+      logServerError({ scope: "pega-scripted-drive", caseId }, error);
+    }
+  }
+
+  /**
+   * Run whichever scripted-mode mirror is due for this case, if any.
+   *
+   * Called at the top of both `getCase` (the frontend's poll) and
+   * `submitAction`, so a marker set by `scheduleExtractionMirror` or the
+   * `CONFIRM_ADDRESS` handling below gets picked up by whichever request
+   * happens to land after its `dueAt` passes — no background timer, no
+   * process required to stay alive between requests. Best-effort: the
+   * marker is cleared before the mirror runs, so a failure here is logged
+   * and swallowed rather than leaving the case stuck retrying forever.
+   */
+  private async runDueScriptedMirror(caseId: string): Promise<void> {
+    const state = await loadState(caseId);
+    const pending = state.collected.scriptedMirror as
+      | ScriptedMirrorMarker
+      | undefined;
+
+    if (!pending || Date.now() < pending.dueAt) {
+      return;
+    }
+
+    state.collected = { ...state.collected, scriptedMirror: undefined };
+    await saveState(caseId, state);
+
+    try {
+      if (pending.kind === "extraction") {
+        await this.mirrorExtractionForScriptedMode(caseId);
+      } else {
+        await this.mirrorScreeningForScriptedMode(caseId);
+      }
+    } catch (error) {
+      logServerError({ scope: "pega-scripted-drive", caseId }, error);
+    }
+  }
+
+  /**
+   * Scripted mode: mirror Arjun Mehta's ground truth onto the real case and
+   * flag the planted address mismatch locally, so the customer sees the
+   * discrepancy screen instead of waiting on the live extraction agent's
+   * wait shape. Called from every path that hands documents to Pega
+   * (`CONTINUE_DOCUMENTS` and the `USE_DEMO_DOCUMENTS` shortcut both submit
+   * the same CollectAddress action underneath). Best-effort — the mirror
+   * itself never throws — so a failure here cannot affect what the customer
+   * is shown.
+   */
+  private async mirrorExtractionForScriptedMode(caseId: string): Promise<void> {
+    const state = await loadState(caseId);
+
+    if (!getPegaDemoModeEnabled() || state.industryId !== "banking") {
+      return;
+    }
+
+    await mirrorScriptedStep(
+      caseId,
+      {
+        content: {
+          // The applicant's own details — name, mobile, email, whatever the
+          // customer has actually given so far — via the same content-shaping
+          // function the real flow-action submission uses, so the case a
+          // presenter opens in Pega afterward is genuinely filled in rather
+          // than carrying only the document list this mode adds on top.
+          ...pegaUpdateCaseDetailsContent(state),
+          Document: scriptedDocumentRows(),
+          Execution: scriptedExecutionRows("extraction"),
+        },
+        // Forces the real case past whatever the live extraction automation
+        // left it at — including a problem-flow assignment — since scripted
+        // mode exists precisely because that automation is unreliable.
+        stage: "PRIM2",
+      },
+      state.correlationId,
+    );
+
+    const scripted = await loadState(caseId);
+    scripted.collected = {
+      ...scripted.collected,
+      addressMismatchPending: true,
+      // Once scripted mode has taken over narrating a case, its own local
+      // status must stay authoritative for the rest of the case's life —
+      // including once the real case reaches Complete. The live automation
+      // this mode bypasses keeps running in Pega after the app stops
+      // waiting on it, and can leave its own now-irrelevant problem-flow
+      // assignment behind; without this flag that stale assignment would
+      // shadow a genuinely successful scripted completion.
+      scriptedDriveActive: true,
+    };
+    await saveState(caseId, scripted);
+  }
+
+  /**
+   * Scripted mode: mirror the screening outcome onto the real case, jump it
+   * to Complete, and clear `screeningPending` so status derivation stops
+   * synthesizing SCREENING_IN_PROGRESS and falls through to the real
+   * (now-Complete) stage. Set up by the `CONFIRM_ADDRESS` handling above via
+   * a `ScriptedMirrorMarker`, run later by `runDueScriptedMirror`.
+   */
+  private async mirrorScreeningForScriptedMode(caseId: string): Promise<void> {
+    const state = await loadState(caseId);
+
+    if (!getPegaDemoModeEnabled() || state.industryId !== "banking") {
+      return;
+    }
+
+    const pack = getIndustryPack(state.industryId);
+
+    await mirrorScriptedStep(
+      caseId,
+      {
+        content: {
+          // Carries the confirmed `Address` page — `state.collected` now
+          // holds `selectedAddress` from the CONFIRM_ADDRESS submission —
+          // through the same content-shaping function the real flow-action
+          // submission uses.
+          ...pegaUpdateCaseDetailsContent(state),
+          Document: scriptedDocumentRows({ addressCorrected: true }),
+          CheckResult: scriptedCheckRows(pack.checkProfile),
+          Execution: scriptedExecutionRows("screening"),
+        },
+        stage: "PRIM6",
+      },
+      state.correlationId,
+    );
+
+    const finished = await loadState(caseId);
+    finished.collected = { ...finished.collected, screeningPending: false };
+    await saveState(caseId, finished);
   }
 
   /**
@@ -948,7 +1217,19 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
    */
   private async handoverDocumentsToPega(
     caseId: string,
-    options: { fillMissingWithSamples: boolean },
+    options: {
+      fillMissingWithSamples: boolean;
+      /**
+       * Skip submitting the CollectAddress flow action once attachments are
+       * registered. Scripted mode uses this: that submission is what runs
+       * into the live extraction agent's wait shape (routinely exceeding
+       * `PEGA_TIMEOUT_MS` on its own), and `mirrorExtractionForScriptedMode`
+       * force-jumps the stage afterward regardless of whether it ran.
+       * Skipping it turns a ~70s round trip that is going to be overridden
+       * anyway into the sub-second attachment registration alone.
+       */
+      skipFlowActionSubmit?: boolean;
+    },
   ): Promise<void> {
     const initialState = await loadState(caseId);
     const pack = getIndustryPack(initialState.industryId);
@@ -1088,6 +1369,14 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
           error,
         );
       }
+    }
+
+    if (options.skipFlowActionSubmit) {
+      const finalState = await loadState(caseId);
+      finalState.collected.documentsProvided = true;
+      finalState.collected.awaitingDocumentUpload = false;
+      await saveState(caseId, finalState);
+      return;
     }
 
     const located = await this.locateAttachmentStep(caseId, true);
@@ -1399,26 +1688,47 @@ export class PegaOrchestrationAdapter implements OnboardingOrchestrationAdapter 
           CustomerOnboardingName: fullName,
         };
 
-        try {
-          const view = await this.readCaseAction(caseId, actionId);
-          eTag = view.eTag ?? eTag;
-          const filtered = restrictToAcceptedFields(
-            nameContent,
-            view.acceptedFields,
-            view.knownFields,
-          );
-          if (
-            view.acceptedFields.has("CustomerOnboardingName") ||
-            view.knownFields.has("CustomerOnboardingName")
-          ) {
-            filtered.CustomerOnboardingName = fullName;
+        // `pyUpdateCaseDetails`'s `Applicant` control is a single-reference
+        // Combobox bound only to `ApplicantName` — confirmed live
+        // 2026-08-19 (see `pegaUpdateCaseDetailsContent`). Its own
+        // `knownFields` still lists `FirstName`/`LastName` (they're real
+        // properties of the underlying Data-Applicant class, just not ones
+        // *this* control writes), so the generic filter below is too
+        // permissive here and the whole PATCH gets rejected. Every other
+        // action id is a genuine flow action whose view has historically
+        // accepted the fuller shape, so only this one gets the minimal form.
+        if (actionId === "pyUpdateCaseDetails") {
+          content = {
+            CustomerOnboardingName: fullName,
+            Applicant: { ApplicantName: fullName },
+          };
+          try {
+            eTag = (await this.readCaseAction(caseId, actionId)).eTag ?? eTag;
+          } catch {
+            // The action may still accept a PATCH without a form view.
           }
-          content =
-            Object.keys(filtered).length > 0
-              ? filtered
-              : { CustomerOnboardingName: fullName };
-        } catch {
-          // The action may still accept a PATCH without a form view.
+        } else {
+          try {
+            const view = await this.readCaseAction(caseId, actionId);
+            eTag = view.eTag ?? eTag;
+            const filtered = restrictToAcceptedFields(
+              nameContent,
+              view.acceptedFields,
+              view.knownFields,
+            );
+            if (
+              view.acceptedFields.has("CustomerOnboardingName") ||
+              view.knownFields.has("CustomerOnboardingName")
+            ) {
+              filtered.CustomerOnboardingName = fullName;
+            }
+            content =
+              Object.keys(filtered).length > 0
+                ? filtered
+                : { CustomerOnboardingName: fullName };
+          } catch {
+            // The action may still accept a PATCH without a form view.
+          }
         }
 
         const { data, eTag: nextTag } = await this.client.requestWithMeta({
@@ -2100,6 +2410,55 @@ function toPegaContent(
   ];
 
   return content;
+}
+
+/**
+ * The subset of `toPegaContent`'s output that `pyUpdateCaseDetails`'s own
+ * view actually declares (confirmed live 2026-08-18 — see
+ * `docs/pega-step-contract.md`'s sibling investigation). Unlike a flow
+ * action's submission, this write is not filtered against a discovered
+ * allowlist, so sending a field the view doesn't know about risks rejecting
+ * the whole request rather than just that field — `toPegaContent` also
+ * produces `EmploymentStatus`/`IncomeRange`/`TaxResidency` and its own
+ * `Execution` row for flow-action submissions, none of which belong here.
+ */
+function pegaUpdateCaseDetailsContent(
+  state: CaseIntegrationState,
+): Record<string, unknown> {
+  const content = toPegaContent(state.collected, {
+    correlationId: state.correlationId,
+  }) as {
+    Applicant?: { ApplicantName?: string };
+    Address?: { AddressName?: string };
+    Consent?: { ConsentName?: string };
+    Channel?: string;
+    SessionContext?: string;
+    ProductIntent?: string;
+  };
+
+  // `Applicant`/`Address`/`Consent` are single-reference fields on this
+  // view (a Combobox bound to a savable Data object by pyGUID, not an
+  // embedded page like `Document`/`CheckResult`/`Execution`) — confirmed
+  // live 2026-08-19: this view accepts only the bare display-name property
+  // for each. Sending `toPegaContent`'s fuller nested shape (StreetAddress,
+  // FirstName, ConsentType, …) rejects the *entire* request with a generic
+  // 400, silently dropping the document/execution rows in the same write.
+  return Object.fromEntries(
+    Object.entries({
+      Applicant: content.Applicant?.ApplicantName
+        ? { ApplicantName: content.Applicant.ApplicantName }
+        : undefined,
+      Address: content.Address?.AddressName
+        ? { AddressName: content.Address.AddressName }
+        : undefined,
+      Consent: content.Consent?.ConsentName
+        ? { ConsentName: content.Consent.ConsentName }
+        : undefined,
+      Channel: content.Channel,
+      SessionContext: content.SessionContext,
+      ProductIntent: content.ProductIntent,
+    }).filter(([, value]) => value !== undefined),
+  );
 }
 
 /** Test seam: clear tracked per-case integration state. */

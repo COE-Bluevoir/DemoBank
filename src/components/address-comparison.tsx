@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button, Card, SectionTitle } from "@/components/ui";
 
@@ -9,13 +9,17 @@ export function AddressComparison({
   documentAddress,
   busy,
   onConfirm,
+  onUploadCorrection,
 }: {
   applicationAddress: string;
   documentAddress: string;
   busy?: boolean;
   onConfirm: (selectedAddress: string) => void;
+  /** A corrected document was chosen — resolve the case with it. */
+  onUploadCorrection?: (file: File) => void;
 }) {
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <Card className="space-y-6">
@@ -47,7 +51,7 @@ export function AddressComparison({
           </button>
         ))}
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
           disabled={!selectedAddress || busy}
@@ -55,10 +59,36 @@ export function AddressComparison({
         >
           Confirm selected address
         </Button>
-        <Button type="button" variant="secondary">
-          Upload another document
-        </Button>
+        {onUploadCorrection ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,application/pdf"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  onUploadCorrection(file);
+                }
+                event.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Upload another document
+            </Button>
+          </>
+        ) : null}
       </div>
+      <p className="text-sm text-[var(--color-ink-subtle)]">
+        The address on the proof of address doesn&apos;t match. Confirm which address is
+        correct, or upload a corrected document if the one on file was wrong.
+      </p>
     </Card>
   );
 }

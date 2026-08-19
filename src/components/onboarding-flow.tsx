@@ -12,6 +12,7 @@ import { CaseReferenceBadge } from "@/components/case-reference-badge";
 import { ConsentCard } from "@/components/consent-card";
 import { CustomerFormSection } from "@/components/customer-form-section";
 import { AlternativeOffer } from "@/components/alternative-offer";
+import { DocumentExtractionResults } from "@/components/document-extraction-results";
 import { DocumentUploader } from "@/components/document-uploader";
 import type { DocumentRequirement } from "@/lib/industry/types";
 import { ErrorState } from "@/components/error-state";
@@ -21,6 +22,7 @@ import { RoutineReviewStatus } from "@/components/routine-review-status";
 import { VerificationProgress } from "@/components/verification-progress";
 import { Badge, Button, Card, SelectInput, TextInput } from "@/components/ui";
 import { PhoneNumberInput } from "@/components/phone-number-input";
+import { EXPECTED_EXTRACTIONS } from "@/lib/fixtures/expected-extraction";
 import { getIndustryPack } from "@/lib/industry/registry";
 import type { IndustryPack } from "@/lib/industry/types";
 import { applicantSchema } from "@/lib/onboarding/schemas";
@@ -184,6 +186,7 @@ export function OnboardingFlow({
     [caseData.industryId],
   );
   const [busy, setBusy] = useState(false);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [uploading, setUploading] = useState<{
     documentCode: string;
     progress: number;
@@ -243,6 +246,7 @@ export function OnboardingFlow({
 
   async function submitAction(actionId: string, data?: Record<string, unknown>) {
     setBusy(true);
+    setPendingActionId(actionId);
     setError(null);
 
     try {
@@ -258,16 +262,20 @@ export function OnboardingFlow({
       const payload = await response.json();
 
       if (!response.ok) {
+        // A timeout here (the CollectAddress submit can legitimately run into
+        // a multi-second Pega wait shape) does not mean nothing happened —
+        // Pega may have kept processing after our client gave up. Refresh
+        // instead of trusting a stale local view, on any failure, not only a
+        // version conflict.
         setError(payload.message || "Unable to submit the action.");
-        if (response.status === 409) {
-          await refreshCase();
-        }
+        await refreshCase();
         return;
       }
 
       setCaseData(payload);
     } finally {
       setBusy(false);
+      setPendingActionId(null);
     }
   }
 
@@ -344,6 +352,37 @@ export function OnboardingFlow({
     }
   }
 
+  // The customer chose to correct the address proof rather than pick between
+  // the two addresses already on file. Re-attaches the file under the same
+  // ADDRESS_PROOF requirement, then resolves the discrepancy with the address
+  // the corrected document actually shows — the real ADDRESS_PROOF_CORRECTED
+  // ground truth, where the billing and service addresses now agree.
+  async function uploadAddressCorrection(file: File) {
+    const requirement = pack.documentProfile.find(
+      (item) => item.code === "ADDRESS_PROOF",
+    );
+
+    if (!requirement) {
+      return;
+    }
+
+    await uploadFile(requirement, file);
+
+    const corrected = EXPECTED_EXTRACTIONS.ADDRESS_PROOF_CORRECTED;
+    const resolvedAddress =
+      corrected?.fields["Service Address"] ||
+      corrected?.fields["Billing Address"] ||
+      caseData.applicant?.addressLine1 ||
+      "";
+
+    if (resolvedAddress) {
+      await submitAction("CONFIRM_ADDRESS", {
+        selectedAddress: resolvedAddress,
+        confirmed: true,
+      });
+    }
+  }
+
   function renderPrimaryContent() {
     if (caseData.status === "STARTED") {
       return (
@@ -404,6 +443,10 @@ export function OnboardingFlow({
           documents={caseData.documents || []}
           uploading={uploading}
           busy={busy}
+          extracting={
+            pendingActionId === "CONTINUE_DOCUMENTS" ||
+            pendingActionId === "USE_DEMO_DOCUMENTS"
+          }
           onFileChange={uploadFile}
           onRemove={(kind) =>
             submitAction(
@@ -423,7 +466,12 @@ export function OnboardingFlow({
       caseData.status === "SCREENING_IN_PROGRESS" ||
       caseData.status === "CREATING_CUSTOMER"
     ) {
-      return <VerificationProgress status={caseData.status} />;
+      return (
+        <VerificationProgress
+          status={caseData.status}
+          documents={caseData.documents}
+        />
+      );
     }
 
     // A commercial alternative and an address mismatch both park the case at
@@ -442,18 +490,30 @@ export function OnboardingFlow({
     }
 
     if (caseData.status === "ADDRESS_CONFIRMATION_REQUIRED") {
+      const addressProof = EXPECTED_EXTRACTIONS.ADDRESS_PROOF;
+
       return (
-        <AddressComparison
-          applicationAddress={caseData.applicant?.addressLine1 || "18 Lake View Road"}
-          documentAddress="81 Lake View Road"
-          busy={busy}
-          onConfirm={(selectedAddress) =>
-            submitAction("CONFIRM_ADDRESS", {
-              selectedAddress,
-              confirmed: true,
-            })
-          }
-        />
+        <div className="space-y-6">
+          <DocumentExtractionResults documents={caseData.documents || []} />
+          <AddressComparison
+            applicationAddress={
+              addressProof?.fields["Billing Address"] ||
+              caseData.applicant?.addressLine1 ||
+              "Registered office on file"
+            }
+            documentAddress={
+              addressProof?.fields["Service Address"] || "Address on the telephone bill"
+            }
+            busy={busy}
+            onConfirm={(selectedAddress) =>
+              submitAction("CONFIRM_ADDRESS", {
+                selectedAddress,
+                confirmed: true,
+              })
+            }
+            onUploadCorrection={uploadAddressCorrection}
+          />
+        </div>
       );
     }
 
@@ -465,6 +525,7 @@ export function OnboardingFlow({
           lastUpdatedAt={caseData.lastUpdatedAt}
           onRefresh={() => refreshCase()}
           busy={busy}
+          checkProfile={pack.checkProfile}
         />
       );
     }

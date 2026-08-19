@@ -1,5 +1,6 @@
 import { getServerConfig } from "@/lib/config/env";
 import { OnboardingAssistantProvider } from "@/lib/assistant/onboarding-provider";
+import { OpenAIAssistantProvider } from "@/lib/assistant/openai-provider";
 import { PegaAssistantProvider } from "@/lib/assistant/pega-provider";
 import type { AssistantProvider } from "@/lib/assistant/provider";
 
@@ -22,9 +23,10 @@ import type { AssistantProvider } from "@/lib/assistant/provider";
 let defaultProvider: AssistantProvider | undefined;
 let pegaProvider: AssistantProvider | undefined;
 let onboardingGuideProvider: AssistantProvider | undefined;
+let openaiProvider: AssistantProvider | undefined;
 
 export function getAssistantProvider(
-  preferred?: "pega" | "onboarding-guide",
+  preferred?: "pega" | "onboarding-guide" | "openai",
 ): AssistantProvider {
   if (preferred === "pega") {
     return (pegaProvider ??= new PegaAssistantProvider());
@@ -34,11 +36,18 @@ export function getAssistantProvider(
     return (onboardingGuideProvider ??= new OnboardingAssistantProvider());
   }
 
+  if (preferred === "openai") {
+    return (openaiProvider ??= new OpenAIAssistantProvider());
+  }
+
   if (!defaultProvider) {
+    const configured = getServerConfig().assistantProvider;
     defaultProvider =
-      getServerConfig().assistantProvider === "pega"
+      configured === "pega"
         ? new PegaAssistantProvider()
-        : new OnboardingAssistantProvider();
+        : configured === "openai"
+          ? new OpenAIAssistantProvider()
+          : new OnboardingAssistantProvider();
   }
 
   return defaultProvider;

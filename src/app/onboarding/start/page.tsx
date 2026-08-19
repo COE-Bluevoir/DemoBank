@@ -5,7 +5,7 @@ import { Suspense, useState } from "react";
 
 import { BankHeader } from "@/components/bank-header";
 import { Button, Card, SectionTitle } from "@/components/ui";
-import { resolveIndustryPack } from "@/lib/industry/registry";
+import { listProductOptions, resolveIndustryPack } from "@/lib/industry/registry";
 import type { OrchestrationMode } from "@/lib/onboarding/types";
 
 function OnboardingStartExperience() {
@@ -14,6 +14,14 @@ function OnboardingStartExperience() {
   // Which industry configuration the customer arrived from. Unknown or absent
   // values fall back to the reference implementation.
   const pack = resolveIndustryPack(searchParams.get("industry") ?? undefined);
+  // Which product within that pack — the home page's product cards link
+  // here with one selected. An unrecognised or absent code falls back to
+  // the pack's first (reference) product, same fallback `resolveProductName`
+  // uses server-side, so the page and the case it creates never disagree.
+  const products = listProductOptions(pack);
+  const requestedProduct = searchParams.get("product");
+  const product =
+    products.find((option) => option.code === requestedProduct) ?? products[0];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The orchestration is chosen in the accelerator and arrives in the URL. A
@@ -35,7 +43,7 @@ function OnboardingStartExperience() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        productCode: "EVERYDAY_PLUS",
+        productCode: product.code,
         channel: "WEB",
         scenarioId: "ADDRESS_PEP_REVIEW",
         industryId: pack.id,
@@ -83,7 +91,7 @@ function OnboardingStartExperience() {
         <Card className="space-y-8">
           <SectionTitle
             eyebrow="Open an account"
-            title={`Open your ${pack.brand.productName}`}
+            title={`Open your ${product.name}`}
             description="Start your application in a guided digital flow with clear requirements, secure document handling and progress updates throughout."
           />
           <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
@@ -92,24 +100,25 @@ function OnboardingStartExperience() {
                 Need help getting started?
               </p>
               <div className="rounded-[24px] bg-white p-5 text-sm leading-7 text-[var(--color-ink)]">
-                I want to open an account for my salary and everyday expenses.
+                I&apos;m looking at the {product.name}.
               </div>
               <div className="rounded-[24px] bg-white p-5 text-sm leading-7 text-[var(--color-ink)]">
-                The Everyday Plus Account may suit that requirement. It supports
-                salary credits, digital payments and everyday banking. Would you
-                like to review the account details or begin your application?
+                {product.description} Would you like to review the account
+                details or begin your application?
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button type="button" disabled={busy} onClick={startJourney}>
                   Begin application
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => router.push("/accounts/everyday-plus")}
-                >
-                  Review account
-                </Button>
+                {product.code === "EVERYDAY_PLUS" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => router.push("/accounts/everyday-plus")}
+                  >
+                    Review account
+                  </Button>
+                ) : null}
               </div>
             </div>
             <div className="space-y-5 rounded-[28px] border border-[var(--color-border)] bg-white p-6">

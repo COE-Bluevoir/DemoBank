@@ -121,10 +121,44 @@ export function mapDxStatus(
     STATUS_BY_STAGE_ID[caseInfo.stageID ?? ""] ??
     "STARTED";
 
+  // Scripted mode flags a planted address discrepancy locally once
+  // extraction has been mirrored into the real case (see
+  // `lib/pega/adapter.ts`'s CONTINUE_DOCUMENTS handling). Checked before the
+  // problem-flow guard below: scripted mode exists precisely because the
+  // live extraction/screening automation this guard watches for is
+  // unreliable, so once this app has taken over narrating the step, a
+  // problem flow left behind by that same automation must not shadow it.
+  if (
+    collected?.addressMismatchPending === true &&
+    collected?.addressConfirmed !== true
+  ) {
+    return "ADDRESS_CONFIRMATION_REQUIRED";
+  }
+
+  // Same pacing purpose as the address-mismatch override above, one stage
+  // further on: set the moment the customer confirms the address, cleared
+  // once the deferred screening mirror actually lands (see
+  // `CONFIRM_ADDRESS` handling in `lib/pega/adapter.ts`).
+  if (collected?.screeningPending === true) {
+    return "SCREENING_IN_PROGRESS";
+  }
+
   // Pega routes a failed flow into an internal problem-flow assignment. That
   // is an operational concern, never a customer step: showing it would loop
   // the customer on a screen they cannot clear.
-  if (awaitsProblemFlowResolution(caseInfo)) {
+  //
+  // Suppressed once scripted mode has taken over narrating this case
+  // (`collected.scriptedDriveActive`): the live automation this mode
+  // bypasses keeps running in Pega in the background after the app stops
+  // waiting on it, and can leave its own now-irrelevant problem-flow
+  // assignment behind even on a case scripted mode has since driven to a
+  // genuine completion. From that point on, this app's own local state is
+  // authoritative for status, exactly like the address-mismatch override
+  // above.
+  if (
+    collected?.scriptedDriveActive !== true &&
+    awaitsProblemFlowResolution(caseInfo)
+  ) {
     return "UNABLE_TO_CONTINUE";
   }
 
@@ -456,20 +490,39 @@ function collectedApplicant(
   };
 }
 
-function mapOutcome(caseInfo: DxCaseInfo): OnboardingCaseView["outcome"] {
-  const customerReference = contentString(caseInfo.content, "CustomerID");
-  const accountReference = contentString(caseInfo.content, "AccountID");
+function mapOutcome(
+  caseInfo: DxCaseInfo,
+  collected?: Record<string, unknown>,
+  status?: OnboardingStatus,
+): OnboardingCaseView["outcome"] {
+  const productName =
+    contentString(caseInfo.content, "ProductIntent") ?? BRAND.productName;
+  let customerReference = contentString(caseInfo.content, "CustomerID");
+  let accountReference = contentString(caseInfo.content, "AccountID");
+
+  // `CustomerID`/`AccountID` are written by Pega's own Create Customer
+  // automation — exactly the live step scripted mode bypasses, so it never
+  // runs on a scripted case. Rather than a completed application showing
+  // blank reference badges, synthesize display values from the case's own
+  // business ID once scripted mode has driven it all the way to Complete.
+  // Gated to scripted mode: outside it, a missing reference on a live case
+  // reflects a genuine automation gap, and a fabricated one would be more
+  // misleading than an honest blank.
+  if (
+    (!customerReference || !accountReference) &&
+    collected?.scriptedDriveActive === true &&
+    status === "COMPLETED"
+  ) {
+    const digits = (caseInfo.businessID ?? caseInfo.ID).replace(/\D/g, "");
+    customerReference ??= `CUS-${digits}`;
+    accountReference ??= `EPA-${digits}`;
+  }
 
   if (!customerReference || !accountReference) {
     return undefined;
   }
 
-  return {
-    customerReference,
-    accountReference,
-    productName:
-      contentString(caseInfo.content, "ProductIntent") ?? BRAND.productName,
-  };
+  return { customerReference, accountReference, productName };
 }
 
 /**
@@ -516,7 +569,7 @@ export function mapDxCaseToView(
     // and are intentionally not synthesised from case data.
     assistantMessages: [],
     lastUpdatedAt: caseInfo.lastUpdateTime ?? new Date().toISOString(),
-    outcome: mapOutcome(caseInfo),
+    outcome: mapOutcome(caseInfo, context.collected, status),
     alert:
       status === "UNABLE_TO_CONTINUE"
         ? {

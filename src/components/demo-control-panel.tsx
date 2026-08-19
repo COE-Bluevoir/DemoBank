@@ -155,12 +155,16 @@ export function DemoControlPanel({
           />
           <span>
             <span className="block font-medium text-[var(--color-ink)]">
-              Pega demo bypass
+              Pega scripted drive
             </span>
             <span className="block text-[var(--color-ink-subtle)]">
-              New cases send DemoModeEnabled to Pega, which routes flows
-              through a stub happy path instead of live GenAI/screening
-              agents. Off runs the real agent calls.
+              Case creation, consent and document upload still call Pega for
+              real. After that, this app mirrors Arjun Mehta&apos;s
+              ground-truth extraction and screening results directly onto the
+              real case and jumps its stage forward, instead of waiting on
+              the live GenAI extraction/screening agents. The real case ends
+              up consistent with what the customer sees. Off runs every step
+              through Pega&apos;s live agents.
             </span>
           </span>
         </label>
