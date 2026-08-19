@@ -27,6 +27,25 @@ export default function AcceleratorPage() {
           <AcceleratorConsole packs={packs} />
 
           <Link
+            href="/accelerator/behind-the-scenes"
+            className="flex items-center justify-between rounded-[28px] border border-[var(--color-border)] bg-white p-6 transition hover:border-[var(--color-ink)]"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-[var(--color-ink)]">
+                Behind the scenes
+              </span>
+              <span className="mt-1 block text-sm text-[var(--color-ink-subtle)]">
+                How a case actually moves between this app and Pega — case
+                orchestration, Pega&apos;s own agents, and the inbound
+                MCP/A2A integrations, step by step.
+              </span>
+            </span>
+            <span aria-hidden className="text-[var(--color-ink-subtle)]">
+              →
+            </span>
+          </Link>
+
+          <Link
             href="/accelerator/governance"
             className="flex items-center justify-between rounded-[28px] border border-[var(--color-border)] bg-white p-6 transition hover:border-[var(--color-ink)]"
           >
