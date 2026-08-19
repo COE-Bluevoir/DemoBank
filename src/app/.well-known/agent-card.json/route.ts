@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
  *
  * Unauthenticated by design: an agent card is meant to be publicly
  * discoverable. The RPC endpoint it points to (`/api/agent`) still requires
- * the shared service API key.
+ * an OAuth 2.0 client-credentials bearer token minted by `/api/oauth2/token`.
  */
 export async function GET(request: Request) {
   const origin = new URL(request.url).origin;
@@ -28,13 +28,17 @@ export async function GET(request: Request) {
       defaultInputModes: ["text/plain"],
       defaultOutputModes: ["text/plain"],
       securitySchemes: {
-        serviceApiKey: {
-          type: "apiKey",
-          in: "header",
-          name: "x-service-api-key",
+        oauthClientCredentials: {
+          type: "oauth2",
+          flows: {
+            clientCredentials: {
+              tokenUrl: `${origin}/api/oauth2/token`,
+              scopes: {},
+            },
+          },
         },
       },
-      security: [{ serviceApiKey: [] }],
+      security: [{ oauthClientCredentials: [] }],
       skills: [
         {
           id: "onboarding-guide",

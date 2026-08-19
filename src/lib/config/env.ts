@@ -90,6 +90,15 @@ const envSchema = z.object({
   DOCUMENT_STORAGE_DIR: z.string().min(1).optional(),
 
   /**
+   * OAuth 2.0 client-credentials for `/api/mcp` and `/api/agent` — the
+   * surfaces Pega's Connect MCP / Connect Agent rules call. Absent unless
+   * all three are set, same pattern as the Pega/AWS connection blocks below.
+   */
+  MCP_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  MCP_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  MCP_OAUTH_SIGNING_KEY: z.string().min(1).optional(),
+
+  /**
    * Where durable state lives.
    *
    * `file` keeps everything on local disk, which suits local development.
@@ -173,6 +182,9 @@ export interface ServerConfig {
   openaiApiKey?: string;
   openaiModel: string;
   serviceApiKey?: string;
+  mcpOAuthClientId?: string;
+  mcpOAuthClientSecret?: string;
+  mcpOAuthSigningKey?: string;
   documentStorageDir?: string;
   storageDriver: RawServerEnv["STORAGE_DRIVER"];
   agents: AgentConfig;
@@ -284,6 +296,9 @@ function loadConfig(source: EnvSource): ServerConfig {
     openaiApiKey: env.OPENAI_API_KEY,
     openaiModel: env.OPENAI_MODEL,
     serviceApiKey: env.SERVICE_API_KEY,
+    mcpOAuthClientId: env.MCP_OAUTH_CLIENT_ID,
+    mcpOAuthClientSecret: env.MCP_OAUTH_CLIENT_SECRET,
+    mcpOAuthSigningKey: env.MCP_OAUTH_SIGNING_KEY,
     documentStorageDir: env.DOCUMENT_STORAGE_DIR,
     storageDriver: env.STORAGE_DRIVER,
     agents: {

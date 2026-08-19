@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
 
 import { handleA2AMessageSend, type A2ASendParams } from "@/lib/assistant/a2a-server";
-import { authorizeServiceRequest } from "@/lib/services/service-auth";
+import { authorizeBearerRequest } from "@/lib/services/oauth";
 
 /**
  * A2A RPC endpoint for Pega's "Connect Agent" rule to call.
  *
- * Same shared-secret authorization as the tool services and the MCP
- * endpoint — this surface is never reachable from the customer browser.
+ * OAuth 2.0 client-credentials, same token issued by `/api/oauth2/token`
+ * and same signing key as `/api/mcp` — one client authorized for both
+ * connectors, since both are the same caller (Pega) reaching the same
+ * server. Never reachable from the customer browser.
  */
 export async function POST(request: Request) {
-  const auth = authorizeServiceRequest(request);
-
-  if (!auth.authorized) {
-    return NextResponse.json({ message: "Unauthorised." }, { status: 401 });
+  if (!authorizeBearerRequest(request)) {
+    return NextResponse.json(
+      { message: "Unauthorised." },
+      { status: 401, headers: { "WWW-Authenticate": "Bearer" } },
+    );
   }
 
   let body: { id?: string | number | null; method?: string; params?: A2ASendParams };
