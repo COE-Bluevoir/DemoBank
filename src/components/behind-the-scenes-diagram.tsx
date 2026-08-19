@@ -98,10 +98,10 @@ export function BehindTheScenesDiagram() {
         <div
           className="absolute rounded-2xl border border-dashed"
           style={{
-            left: "6%",
+            left: "4%",
             top: "12%",
-            width: "36%",
-            height: "82%",
+            width: "40%",
+            height: "80%",
             borderColor: "color-mix(in srgb, var(--color-primary) 35%, transparent)",
             backgroundColor: "color-mix(in srgb, var(--color-primary) 4%, transparent)",
           }}
@@ -116,10 +116,10 @@ export function BehindTheScenesDiagram() {
         <div
           className="absolute rounded-2xl border border-dashed"
           style={{
-            left: "58%",
+            left: "52%",
             top: "12%",
-            width: "36%",
-            height: "82%",
+            width: "44%",
+            height: "80%",
             borderColor: "color-mix(in srgb, var(--color-navy) 35%, transparent)",
             backgroundColor: "color-mix(in srgb, var(--color-navy) 4%, transparent)",
           }}
@@ -128,7 +128,7 @@ export function BehindTheScenesDiagram() {
             className="absolute -top-3 left-4 rounded-full bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
             style={{ color: "var(--color-navy)" }}
           >
-            Pega Infinity
+            Pega Infinity — orchestrator &amp; specialist agents
           </p>
         </div>
 

@@ -7,7 +7,7 @@ import { Card, SectionTitle } from "@/components/ui";
 export const metadata: Metadata = {
   title: "Behind the scenes",
   description:
-    "How a case actually moves between this app and Pega — case orchestration, Pega's own agents, and the inbound MCP/A2A integrations.",
+    "How a case actually moves between this app and Pega — the conversational agent, Pega's own orchestrator and specialist agents, and the inbound MCP/A2A integrations, each hop labelled with its real protocol.",
 };
 
 export default function BehindTheScenesPage() {
@@ -37,7 +37,7 @@ export default function BehindTheScenesPage() {
           <SectionTitle
             eyebrow="System interactions, one hop at a time"
             title="How a case moves between this app and Pega"
-            description="Case orchestration over REST, Pega's own two agents handing off within the case, and the inbound MCP/A2A integrations Pega calls into this app — each step labelled with its real protocol. A fixed walkthrough, not a live feed, so it stays presentable regardless of what a real case is doing right now."
+            description="A conversational agent outside Pega, a REST handoff into the case, Pega's own orchestrator agent delegating to its specialist agents (native to Pega, not built here), and — separately — the inbound MCP and A2A integrations this app exposes for Pega to call. Each step named with what actually does the work and the real protocol it uses. A fixed walkthrough, not a live feed, so it stays presentable regardless of what a real case is doing right now."
           />
           <BehindTheScenesDiagram />
         </Card>

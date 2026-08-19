@@ -1,20 +1,29 @@
 /**
  * Script for the "behind the scenes" system-interaction diagram.
  *
- * Deliberately a fixed, curated sequence rather than a live replay of a real
- * case's event log — that was the explicit ask: something safe to show
- * leadership that doesn't depend on a real case (or live Pega) behaving
- * during the moment it's on screen. Every node, edge and protocol name here
- * matches the real integration documented in the architecture diagram
- * (Connect MCP / Connect Agent, DX API v2 OAuth client-credentials, the
- * extraction/screening agents) — nothing here is invented for effect.
+ * A fixed, curated sequence rather than a live replay of a real case's event
+ * log — safe to show leadership without depending on a real case (or live
+ * Pega) behaving during the moment it's on screen.
+ *
+ * Protocol placement is deliberate and was corrected once already: Pega's
+ * own orchestrator-agent / specialist-agent pattern, its out-of-the-box Data
+ * Pages (how the Document Agent reads case attachments) and its REST
+ * Connect rules (how the Screening Agent calls its — in this build, mocked
+ * — screening tools) are Pega's native platform capability, not something
+ * built for this app, and are labelled as such. MCP and A2A are labelled
+ * only where this app genuinely built and exposed them: the two inbound
+ * integration surfaces Pega's Connect MCP and Connect Agent rules call.
+ * Nothing here claims a protocol where one doesn't actually apply — that
+ * was the explicit bar this was written to survive.
  */
 
 export type NodeId =
   | "customer"
-  | "appUi"
+  | "conversationalAgent"
+  | "appAdapter"
   | "pegaCase"
-  | "extractionAgent"
+  | "orchestratorAgent"
+  | "documentAgent"
   | "screeningAgent"
   | "mcpServer"
   | "agentServer";
@@ -30,20 +39,24 @@ export interface DiagramNode {
 
 export const NODES: readonly DiagramNode[] = [
   { id: "customer", label: "Customer", sublabel: "browser", x: 50, y: 6, zone: "customer" },
-  { id: "appUi", label: "Onboarding UI", sublabel: "This app · Next.js", x: 22, y: 26, zone: "app" },
-  { id: "pegaCase", label: "Pega Case", sublabel: "CustomerOnboardingUnified", x: 78, y: 26, zone: "pega" },
-  { id: "extractionAgent", label: "Document Extraction Agent", sublabel: "GenAI, reads uploads", x: 78, y: 52, zone: "pega" },
-  { id: "screeningAgent", label: "Screening / Risk Agent", sublabel: "sanctions, PEP, fraud", x: 78, y: 78, zone: "pega" },
-  { id: "mcpServer", label: "MCP server", sublabel: "This app · /api/mcp", x: 22, y: 52, zone: "app" },
-  { id: "agentServer", label: "Agent server", sublabel: "This app · /api/agent", x: 22, y: 78, zone: "app" },
+  { id: "conversationalAgent", label: "Conversational Agent", sublabel: "This app · outside Pega", x: 24, y: 22, zone: "app" },
+  { id: "appAdapter", label: "Onboarding Adapter", sublabel: "This app · creates & submits the case", x: 24, y: 40, zone: "app" },
+  { id: "mcpServer", label: "MCP server", sublabel: "This app · /api/mcp", x: 24, y: 64, zone: "app" },
+  { id: "agentServer", label: "Agent server", sublabel: "This app · /api/agent", x: 24, y: 82, zone: "app" },
+  { id: "pegaCase", label: "Pega Case", sublabel: "CustomerOnboardingUnified", x: 76, y: 22, zone: "pega" },
+  { id: "orchestratorAgent", label: "Customer Onboarding Agent", sublabel: "Pega's orchestrator", x: 76, y: 40, zone: "pega" },
+  { id: "documentAgent", label: "Document Agent", sublabel: "Pega specialist agent", x: 66, y: 64, zone: "pega" },
+  { id: "screeningAgent", label: "Screening Agent", sublabel: "Pega specialist agent", x: 86, y: 64, zone: "pega" },
 ];
 
-export type ProtocolKind = "https" | "rest" | "internal" | "mcp" | "a2a";
+export type ProtocolKind = "chat" | "rest" | "delegation" | "dpage" | "connect-rest" | "mcp" | "a2a";
 
 export const PROTOCOL_LABEL: Record<ProtocolKind, string> = {
-  https: "HTTPS",
+  chat: "Conversation · this app's UI",
   rest: "REST · DX API v2 · OAuth2 client-credentials",
-  internal: "Pega case orchestration",
+  delegation: "Pega agent-to-agent orchestration (native)",
+  dpage: "Pega out-of-the-box Data Page (native)",
+  "connect-rest": "Pega REST Connect rule (mocked screening services)",
   mcp: "MCP · JSON-RPC 2.0 · OAuth bearer",
   a2a: "A2A · message/send · OAuth bearer",
 };
@@ -55,89 +68,106 @@ export interface DiagramStep {
   from: NodeId;
   to: NodeId;
   protocol: ProtocolKind;
-  /** Which side actually initiates this hop — drives the arrowhead/pulse direction. */
-  direction: "forward" | "reverse";
 }
 
 export const STEPS: readonly DiagramStep[] = [
   {
-    id: "submit",
-    title: "1. Customer submits the application",
+    id: "guide",
+    title: "1. The conversational agent guides product selection",
     caption:
-      "The customer uploads documents and submits through this app's onboarding UI — nothing about the case exists in Pega yet.",
+      "The customer talks to this app's own conversational agent, which recommends a product and, once accepted, collects their details and documents. Nothing exists in Pega yet.",
     from: "customer",
-    to: "appUi",
-    protocol: "https",
-    direction: "forward",
+    to: "conversationalAgent",
+    protocol: "chat",
   },
   {
     id: "create-case",
     title: "2. This app creates the case in Pega",
     caption:
-      "The app calls Pega's DX API v2 directly — POST /cases, then PATCH on each flow action — authenticated with OAuth2 client-credentials Pega itself issued. Pega owns everything from here: stage progression, which agent runs when, and what the case can resolve as.",
-    from: "appUi",
+      "Once details and documents are ready, this app's onboarding adapter creates and submits the case through Pega's DX API v2 — REST, OAuth2 client-credentials. Creating a system-of-record case is a structured data operation, not an agent decision, so REST is the right protocol here.",
+    from: "appAdapter",
     to: "pegaCase",
     protocol: "rest",
-    direction: "forward",
   },
   {
-    id: "invoke-extraction",
-    title: "3. Pega's case flow hands off to the Document Extraction Agent",
+    id: "reach-orchestrator",
+    title: "3. The case reaches Pega's Customer Onboarding Agent",
     caption:
-      "At the Verify Identity stage, the case flow invokes the Document Extraction Agent, which reads the uploaded files directly.",
+      "Pega's own orchestrator agent for this journey picks up the case. Its job is pure coordination — decide which specialist agent to invoke next, wait for its result, decide what happens after. It performs no extraction or screening itself. This orchestrator/specialist-agent pattern is Pega's own platform capability, not something built for this app.",
     from: "pegaCase",
-    to: "extractionAgent",
-    protocol: "internal",
-    direction: "forward",
+    to: "orchestratorAgent",
+    protocol: "delegation",
   },
   {
-    id: "extraction-result",
-    title: "4. The agent writes its result back onto the case",
+    id: "invoke-document",
+    title: "4. Orchestrator delegates to the Document Agent",
     caption:
-      "Extracted fields, confidence scores and any discrepancy found are written back as case data — the same shape a reviewer would expect from a real agent's report, not just a pass/fail flag.",
-    from: "extractionAgent",
-    to: "pegaCase",
-    protocol: "internal",
-    direction: "reverse",
+      "An agent-to-agent hand-off, native to Pega: “extract and validate this application's documents.”",
+    from: "orchestratorAgent",
+    to: "documentAgent",
+    protocol: "delegation",
+  },
+  {
+    id: "document-result",
+    title: "5. Document Agent reads the files and reports back",
+    caption:
+      "The Document Agent reads the case's attached files using Pega's own out-of-the-box Data Pages — native to Pega, not an external call — and returns extracted fields, a confidence score per field, and any discrepancy found back to the orchestrator.",
+    from: "documentAgent",
+    to: "orchestratorAgent",
+    protocol: "dpage",
   },
   {
     id: "invoke-screening",
-    title: "5. Pega's case flow hands off to the Screening / Risk Agent",
+    title: "6. Orchestrator delegates to the Screening Agent",
     caption:
-      "At the Perform Screening stage, the case flow invokes the Screening/Risk Agent to run sanctions, PEP, duplicate-customer and fraud checks.",
-    from: "pegaCase",
+      "Documents validated — now “run this application's risk and compliance checks.”",
+    from: "orchestratorAgent",
     to: "screeningAgent",
-    protocol: "internal",
-    direction: "forward",
+    protocol: "delegation",
   },
   {
     id: "screening-result",
-    title: "6. The agent writes its result back, and the case resolves",
+    title: "7. Screening Agent runs its checks and reports back",
     caption:
-      "Screening outcomes are written back the same way, and the case resolves on what both agents actually found — deterministic once written, and auditable.",
+      "Sanctions, PEP and duplicate-customer checks, each called through Pega's standard REST Connect rules — in this build, mocked services standing in for real screening providers — with the result returned to the orchestrator.",
     from: "screeningAgent",
+    to: "orchestratorAgent",
+    protocol: "connect-rest",
+  },
+  {
+    id: "resolve",
+    title: "8. The orchestrator resolves the case",
+    caption:
+      "With both specialist agents' results in hand, the case is updated and resolves according to Pega's own case rules — that decision belongs to Pega's case logic, not either agent.",
+    from: "orchestratorAgent",
     to: "pegaCase",
-    protocol: "internal",
-    direction: "reverse",
+    protocol: "delegation",
+  },
+  {
+    id: "reflect",
+    title: "9. This app reflects the outcome",
+    caption:
+      "The app polls the case over the same DX API and renders whatever Pega's case now says. It has no independent opinion about the outcome — only the system of record does.",
+    from: "pegaCase",
+    to: "appAdapter",
+    protocol: "rest",
   },
   {
     id: "connect-mcp",
-    title: "7. Separately — Pega's Connect MCP rule calls this app's tool server",
+    title: "10. Separately — Pega's Connect MCP rule calls this app's tool server",
     caption:
-      "Independent of any one case: a Connect MCP rule in Pega can call this app's MCP server for the same tool services Pega already had (extraction, screening, fulfilment), now over a standard protocol instead of a bespoke REST contract.",
+      "Independent of any one case: a Connect MCP rule in Pega can call this app's MCP server for tool services (extraction, screening, fulfilment) over a standard protocol instead of a bespoke REST contract. This is real, custom-built integration on this app's side.",
     from: "pegaCase",
     to: "mcpServer",
     protocol: "mcp",
-    direction: "forward",
   },
   {
     id: "connect-agent",
-    title: "8. Separately — Pega's Connect Agent rule calls this app's assistant",
+    title: "11. Separately — Pega's Connect Agent rule calls this app's assistant",
     caption:
-      "A Connect Agent rule can call this app's A2A endpoint, fronting the same grounded assistant the website's own chat widget uses — answers scoped to the industry pack's own data, never a free-standing model guess.",
+      "A Connect Agent rule can call this app's A2A endpoint, fronting the same grounded assistant the website's own chat widget uses — answers scoped to real case/product data, never a free-standing model guess. Also real, custom-built integration on this app's side.",
     from: "pegaCase",
     to: "agentServer",
     protocol: "a2a",
-    direction: "forward",
   },
 ];
