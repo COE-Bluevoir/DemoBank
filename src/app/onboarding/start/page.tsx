@@ -6,7 +6,6 @@ import { Suspense, useState } from "react";
 import { BankHeader } from "@/components/bank-header";
 import { Button, Card, SectionTitle } from "@/components/ui";
 import { listProductOptions, resolveIndustryPack } from "@/lib/industry/registry";
-import type { OrchestrationMode } from "@/lib/onboarding/types";
 
 function OnboardingStartExperience() {
   const router = useRouter();
@@ -24,16 +23,6 @@ function OnboardingStartExperience() {
     products.find((option) => option.code === requestedProduct) ?? products[0];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // The orchestration is chosen in the accelerator and arrives in the URL. A
-  // customer opening an account never picks an engine, so there is no control
-  // for it here — only the choice already made.
-  const requestedMode = searchParams.get("mode");
-  const mode: OrchestrationMode | null =
-    requestedMode === "pega" ||
-    requestedMode === "non-pega" ||
-    requestedMode === "mock-pega"
-      ? requestedMode
-      : null;
 
   async function startJourney() {
     setBusy(true);
@@ -47,9 +36,8 @@ function OnboardingStartExperience() {
         channel: "WEB",
         scenarioId: "ADDRESS_PEP_REVIEW",
         industryId: pack.id,
-        // Binds the customer's choice to this application. Omitted only when
-        // the switch never loaded, where the server default applies.
-        ...(mode ? { orchestrationMode: mode } : {}),
+        // Orchestration mode is fixed for this deployment and the server
+        // ignores any value sent here — nothing to bind.
       }),
     });
 

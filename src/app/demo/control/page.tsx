@@ -3,11 +3,7 @@ import { notFound } from "next/navigation";
 import { DemoAuthForm } from "@/components/demo-auth-form";
 import { DemoControlPanel } from "@/components/demo-control-panel";
 import { BankHeader } from "@/components/bank-header";
-import {
-  getDemoSettings,
-  getModeOptions,
-  getScenarioOptions,
-} from "@/lib/onboarding/engine";
+import { getDemoSettings, getScenarioOptions } from "@/lib/onboarding/engine";
 import { getDemoControlEnabled, isDemoAuthorized } from "@/lib/onboarding/demo-auth";
 import { loadCurrentCase } from "@/lib/onboarding/current-case";
 
@@ -45,7 +41,6 @@ export default async function DemoControlPage({
           initialEvents={events}
           settings={getDemoSettings()}
           scenarioOptions={getScenarioOptions()}
-          modeOptions={getModeOptions()}
         />
       </main>
     </div>

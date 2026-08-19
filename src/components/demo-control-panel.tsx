@@ -6,7 +6,6 @@ import type {
   DemoExecutionEvent,
   DemoSettings,
   OnboardingCaseView,
-  OrchestrationMode,
   ScenarioId,
 } from "@/lib/onboarding/types";
 import { formatDateTime } from "@/lib/onboarding/utils";
@@ -19,21 +18,14 @@ export function DemoControlPanel({
   initialEvents,
   settings,
   scenarioOptions,
-  modeOptions,
 }: {
   initialCase: OnboardingCaseView | null;
   initialEvents: DemoExecutionEvent[];
   settings: DemoSettings;
   scenarioOptions: Array<{ id: ScenarioId; label: string; description: string }>;
-  modeOptions: Array<{
-    id: OrchestrationMode;
-    label: string;
-    description: string;
-  }>;
 }) {
   const [caseData, setCaseData] = useState(initialCase);
   const [events, setEvents] = useState(initialEvents);
-  const [mode, setMode] = useState(settings.orchestrationMode);
   const [scenario, setScenario] = useState(settings.scenarioId);
   const [pegaDemoMode, setPegaDemoMode] = useState(
     settings.pegaDemoModeEnabled,
@@ -74,15 +66,6 @@ export function DemoControlPanel({
         setCaseData(payload.caseView);
         setEvents(payload.events);
       }
-    });
-  }
-
-  async function updateModeSelection(value: OrchestrationMode) {
-    setMode(value);
-    await fetch("/api/demo/mode", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orchestrationMode: value }),
     });
   }
 
@@ -128,23 +111,14 @@ export function DemoControlPanel({
               ))}
             </SelectInput>
           </label>
-          <label className="space-y-2 text-sm">
+          <div className="space-y-2 text-sm">
             <span className="font-medium text-[var(--color-ink)]">
               Orchestration mode
             </span>
-            <SelectInput
-              value={mode}
-              onChange={(event) =>
-                updateModeSelection(event.target.value as OrchestrationMode)
-              }
-            >
-              {modeOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </SelectInput>
-          </label>
+            <p className="rounded-2xl border border-[var(--color-border-strong)] bg-[var(--color-surface-soft)] px-4 py-3 text-sm text-[var(--color-ink)]">
+              {settings.orchestrationMode} — fixed for this deployment
+            </p>
+          </div>
         </div>
         <label className="flex items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-soft)] p-4 text-sm">
           <input
