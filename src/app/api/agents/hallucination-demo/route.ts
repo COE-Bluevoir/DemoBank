@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import {
-  HALLUCINATION_QUESTIONS,
-  runHallucinationDemo,
-} from "@/lib/agents/hallucination-demo";
+import { runHallucinationDemo } from "@/lib/agents/hallucination-demo";
+import { HALLUCINATION_QUESTIONS } from "@/lib/agents/hallucination-questions";
 import { logServerError } from "@/lib/observability/logger";
 
 /**

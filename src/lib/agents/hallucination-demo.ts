@@ -1,67 +1,30 @@
 import { getServerConfig } from "@/lib/config/env";
 import { OnboardingAssistantProvider } from "@/lib/assistant/onboarding-provider";
 import type { IndustryId } from "@/lib/industry/types";
+import {
+  HALLUCINATION_QUESTIONS,
+  type HallucinationDemoResult,
+} from "@/lib/agents/hallucination-questions";
 
 /**
  * Grounded versus ungrounded, side by side.
  *
  * A marketing-demoable answer to "why does governed execution matter" that
  * isn't a capability table — an actual model, actually asked, actually
- * getting it wrong. Both curated questions below are reproductions of a real
- * failure caught live in this app's own chat widget before its system prompt
- * carried the real document list (see the OpenAI provider's grounding fix):
- * asked with no grounding, gpt-4o-mini confidently invents US business-
- * banking requirements (an EIN, "Articles of Incorporation") for an Indian
- * bank, and a specific fabricated interest rate for a product that has none
- * on file. Deliberately not free text — a live demo needs a failure that
- * reproduces the same way every time, not one that depends on today's
- * sampling.
+ * getting it wrong. Both curated questions (see hallucination-questions.ts)
+ * are reproductions of a real failure caught live in this app's own chat
+ * widget before its system prompt carried the real document list (see the
+ * OpenAI provider's grounding fix): asked with no grounding, gpt-4o-mini
+ * confidently invents US business-banking requirements (an EIN, "Articles
+ * of Incorporation") for an Indian bank, and a specific fabricated interest
+ * rate for a product that has none on file. Deliberately not free text — a
+ * live demo needs a failure that reproduces the same way every time, not
+ * one that depends on today's sampling.
+ *
+ * Server-only: imports getServerConfig, which throws if pulled into a
+ * client bundle. The client component imports question data from
+ * hallucination-questions.ts instead, never from this file.
  */
-
-export interface HallucinationQuestion {
-  id: string;
-  label: string;
-  question: string;
-  /**
-   * Curated, not model-generated — names the specific invented claim so the
-   * demo can point at it instead of asking the audience to spot it
-   * themselves, and states how the governed side gets it right on purpose.
-   */
-  correction: string;
-}
-
-export const HALLUCINATION_QUESTIONS: readonly HallucinationQuestion[] = [
-  {
-    id: "documents",
-    label: "What documents do I need?",
-    question: "What documents do I need to open a business account?",
-    correction:
-      "The ungrounded model reaches for US concepts — an EIN, a Social Security Number, \"Articles of Incorporation\" — that don't exist in Indian business banking. Pega's answer is pulled from the same document checklist the case actually enforces at upload: nothing it names can be wrong, because it isn't guessing.",
-  },
-  {
-    id: "interest-rate",
-    label: "What's the interest rate?",
-    question: "What is the interest rate on the Everyday Plus Account?",
-    correction:
-      "The ungrounded model states a specific interest rate with total confidence — the product has none on file, so every digit is fabricated. Pega's answer is scoped to what the case data actually contains, and says so instead of inventing a number.",
-  },
-];
-
-export interface HallucinationDemoResult {
-  question: string;
-  correction: string;
-  ungrounded: {
-    text: string;
-    model: string;
-    grounded: false;
-  };
-  governed: {
-    text: string;
-    source: string;
-    /** True when the answer came from the industry pack; false when it correctly declined instead of guessing. */
-    answered: boolean;
-  };
-}
 
 /**
  * Strips markdown syntax the model tends to reach for (bold, headers,

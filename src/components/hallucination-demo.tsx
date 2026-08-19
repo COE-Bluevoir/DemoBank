@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AlertTriangle, ArrowDown, ShieldCheck, ShieldOff } from "lucide-react";
 
-import { HALLUCINATION_QUESTIONS } from "@/lib/agents/hallucination-demo";
+import { HALLUCINATION_QUESTIONS } from "@/lib/agents/hallucination-questions";
 import type { IndustryId } from "@/lib/industry/types";
 import { Badge, Button, Card, SectionTitle } from "@/components/ui";
 
